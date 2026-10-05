@@ -60,6 +60,8 @@ void video_watchdog_start(volatile bool *done_flag) {
 }
 #endif
 
+static App app;
+
 void app_set_status(App *a, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
