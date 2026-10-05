@@ -279,6 +279,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     TRACE("sdl ok");
+#ifdef TARGET_WEBOS
     /* Transparent window: clears the splash and takes focus, but the
      * compositor blends the LGNC video plane through. The hint must be
      * set before window creation; it clears the surface opaque region.
