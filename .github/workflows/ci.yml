@@ -16,7 +16,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake libsdl2-dev libsdl2-net-dev python3 ccache
+          sudo apt-get install -y cmake libsdl2-dev libsdl2-net-dev python3 ccache meson ninja-build
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.24
         with:
@@ -48,7 +48,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake python3 ccache binutils
+          sudo apt-get install -y cmake python3 ccache binutils meson ninja-build
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.24
         with:
