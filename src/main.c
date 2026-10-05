@@ -332,6 +332,7 @@ int main(int argc, char **argv) {
                 g_running = 0;
             } else if (ev.type == SDL_KEYDOWN) {
                 SDL_Keycode k = ev.key.keysym.sym;
+                osd_trace("key sym=%d scancode=%d", (int) k, (int) ev.key.keysym.scancode);
                 if (k == SDLK_ESCAPE || k == SDLK_AC_BACK) {
                     if (app.state == APP_STATE_STREAMING && app.session != NULL) {
                         app_teardown_session();
