@@ -51,9 +51,8 @@ ExternalProject_Get_Property(ext_sdl2_backport INSTALL_DIR)
 
 add_library(ext_sdl2_backport_target SHARED IMPORTED GLOBAL)
 set_target_properties(ext_sdl2_backport_target PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/lib/${LIB_FILENAME})
+target_include_directories(ext_sdl2_backport_target INTERFACE ${INSTALL_DIR}/include/SDL2 ${INSTALL_DIR}/include)
 target_compile_definitions(ext_sdl2_backport_target INTERFACE __WEBOS__)
-
-add_dependencies(ext_sdl2_backport_target ext_sdl2_backport)
 
 add_library(SDL2::SDL2 ALIAS ext_sdl2_backport_target)
 
