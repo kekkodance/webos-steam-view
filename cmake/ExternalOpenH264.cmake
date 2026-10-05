@@ -33,6 +33,7 @@ ExternalProject_Add(ext_openh264
         BUILD_BYPRODUCTS <INSTALL_DIR>/lib/${LIB_FILENAME}
         INSTALL_DIR "${_install_dir}"
         )
+ExternalProject_Get_Property(ext_openh264 INSTALL_DIR)
 
 # --libdir=lib above keeps the archive at a fixed path (no multiarch dir).
 add_library(ext_openh264_target STATIC IMPORTED)
