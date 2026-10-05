@@ -7,6 +7,9 @@
 
 #define LV_CONF_INCLUDE_SIMPLE 1
 
+/* Pinned fork (mariotaku/lvgl master): the dev-version #warning is noise. */
+#define LV_USE_DEV_VERSION
+
 #define LV_COLOR_DEPTH 32
 #define LV_MEM_SIZE (256 * 1024U)
 #define LV_USE_LOG 0
