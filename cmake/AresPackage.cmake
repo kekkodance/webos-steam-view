@@ -46,7 +46,10 @@ execute_process(COMMAND ${CMAKE_COMMAND} -E tar czf "${_PKGDIR}/control.tar.gz" 
 
 # ar archive: debian-binary, control.tar.gz, data.tar.gz (must be that order)
 # ipk = ar archive of: debian-binary, control.tar.gz, data.tar.gz (in that order)
-execute_process(COMMAND ${CMAKE_AR} -rc "${_PKG}" "debian-binary" "control.tar.gz" "data.tar.gz"
+# Resolve ar at pack time: CMAKE_AR is a bare "ar" here (PackageWebOS forces
+# the cache entry), which fails if PATH differs from configure time.
+find_program(_IPK_AR ar REQUIRED)
+execute_process(COMMAND ${_IPK_AR} -rc "${_PKG}" "debian-binary" "control.tar.gz" "data.tar.gz"
         WORKING_DIRECTORY "${_PKGDIR}" COMMAND_ERROR_IS_FATAL ANY)
 file(REMOVE_RECURSE "${_PKGDIR}")
 message(STATUS "IPK written to ${_PKG}")
