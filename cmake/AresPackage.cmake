@@ -44,12 +44,11 @@ execute_process(COMMAND ${CMAKE_COMMAND} -E tar czf "${_PKGDIR}/data.tar.gz" ./u
 execute_process(COMMAND ${CMAKE_COMMAND} -E tar czf "${_PKGDIR}/control.tar.gz" ./control
         WORKING_DIRECTORY "${_PKGDIR}/control" COMMAND_ERROR_IS_FATAL ANY)
 
-# ar archive: debian-binary, control.tar.gz, data.tar.gz (must be that order)
-# ipk = ar archive of: debian-binary, control.tar.gz, data.tar.gz (in that order)
-# Resolve ar at pack time: CMAKE_AR is a bare "ar" here (PackageWebOS forces
-# the cache entry), which fails if PATH differs from configure time.
-find_program(_IPK_AR ar REQUIRED)
-execute_process(COMMAND ${_IPK_AR} -rc "${_PKG}" "debian-binary" "control.tar.gz" "data.tar.gz"
-        WORKING_DIRECTORY "${_PKGDIR}" COMMAND_ERROR_IS_FATAL ANY)
+# ar archive: debian-binary, control.tar.gz, data.tar.gz (must be that order).
+# Written with Python (stdlib only): needs no ares-package, no binutils, and
+# no PATH luck. The GNU ar variant (trailing "/" names) is what opkg accepts.
+execute_process(COMMAND python3 "${CMAKE_SOURCE_DIR}/cmake/make_ar.py"
+        "${_PKG}" "${_PKGDIR}/debian-binary" "${_PKGDIR}/control.tar.gz" "${_PKGDIR}/data.tar.gz"
+        COMMAND_ERROR_IS_FATAL ANY)
 file(REMOVE_RECURSE "${_PKGDIR}")
 message(STATUS "IPK written to ${_PKG}")
