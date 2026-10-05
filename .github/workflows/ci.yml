@@ -10,7 +10,7 @@ jobs:
     name: Host build + smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Install deps
@@ -34,7 +34,7 @@ jobs:
     name: webOS IPK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Install deps
@@ -42,7 +42,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake python3
       - name: Download webOS NDK
-        uses: robinraju/release-downloader@v1.12
+        uses: robinraju/release-downloader@v1.13
         with:
           repository: openlgtv/buildroot-nc4
           tag: webos-a38c582
@@ -58,7 +58,7 @@ jobs:
         env:
           TOOLCHAIN_FILE: /tmp/arm-webos-linux-gnueabi_sdk-buildroot/share/buildroot/toolchainfile.cmake
       - name: Upload IPK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: steamview-webos-ipk
           path: dist/*.ipk

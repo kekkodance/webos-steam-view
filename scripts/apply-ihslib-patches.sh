@@ -17,6 +17,7 @@
 # Keep this script in sync with the CI workflow (it runs there before building).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+ROOT="$PWD"
 IHS=third_party/ihslib
 
 if ! [ -d "$IHS" ]; then
@@ -30,7 +31,10 @@ if [ -f "$MARKER" ]; then
     echo "protocol patches already applied, skipping"
 else
     for p in patches/ihslib/*.patch; do
-        git -C "$IHS" apply "$OLDPWD/$p" && echo "applied: $(basename $p)"
+        # --ignore-whitespace: Windows checkouts are CRLF, patch context is
+        # LF. Without this every hunk with context fails on Win, while Linux
+        # CI (LF native) passes. Harmless where endings already match.
+        git -C "$IHS" apply --ignore-whitespace "$ROOT/$p" && echo "applied: $(basename $p)"
     done
     touch "$MARKER"
 fi
