@@ -27,7 +27,7 @@ ExternalProject_Add(ext_sdl2_backport
         GIT_REPOSITORY "https://github.com/webosbrew/SDL-webOS.git"
         GIT_TAG "${SDL2_BACKPORT_REVISION}"
         GIT_SHALLOW TRUE
-        PATCH_COMMAND git apply "${CMAKE_SOURCE_DIR}/cmake/sdl-webos-pointer-guard.patch"
+        PATCH_COMMAND git -C <SOURCE_DIR> apply "${CMAKE_SOURCE_DIR}/cmake/sdl-webos-pointer-guard.patch"
         CMAKE_ARGS ${EXT_SDL2_TOOLCHAIN_ARGS}
         -DCMAKE_BUILD_TYPE:string=${CMAKE_BUILD_TYPE}
         # The NDK sysroot static libs (libdl.a, libm.a) are broken
