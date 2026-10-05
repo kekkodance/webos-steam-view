@@ -273,6 +273,12 @@ int main(int argc, char **argv) {
     }
     TRACE("media ok");
 #endif
+    /* Transparency hint BEFORE SDL_Init: the fork reads it in VideoInit
+     * and registers a callback that clears the surface opaque region on
+     * late changes. Setting it after init cleared the region on the live
+     * window while EGL stayed opaque -> compositor dropped the surface
+     * (builds 21/22 splash-stuck). Early + consistent from the start. */
+    SDL_SetHint(SDL_HINT_VIDEO_EGL_ALLOW_TRANSPARENCY, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         TRACE("SDL_Init FAILED: %s", SDL_GetError());
@@ -280,15 +286,15 @@ int main(int argc, char **argv) {
     }
     TRACE("sdl ok");
 #ifdef TARGET_WEBOS
-    /* Opaque black present: commits a buffer so the compositor maps the
-     * surface and clears the splash (proven: build 20 showed black).
-     * Transparency is verified live on-TV next, not shipped blind. */
+    /* Transparent present: maps the surface (clears splash) while the
+     * LGNC video plane blends through. */
     SDL_Window *win = SDL_CreateWindow("Steam View", 0, 0, 1920, 1080,
                                        SDL_WINDOW_FULLSCREEN);
     if (win != NULL) {
         SDL_Renderer *ren = SDL_CreateRenderer(win, -1, 0);
         if (ren != NULL) {
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 0);
             SDL_RenderClear(ren);
             SDL_RenderPresent(ren);
         }
