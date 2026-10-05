@@ -385,6 +385,18 @@ int main(int argc, char **argv) {
         }
         /* OSD menus refresh on state change; console echoes status. */
         ui_sync(app.state);
+#ifdef TARGET_WEBOS
+        /* Menus show (not streaming): re-feed the last menu AU at ~5Hz.
+         * The VDEC pipeline needs continuous feed to start displaying. */
+        if (app.state != APP_STATE_STREAMING && app.session == NULL) {
+            static Uint32 last_repeat = 0;
+            Uint32 now = SDL_GetTicks();
+            if (now - last_repeat >= 200) {
+                last_repeat = now;
+                osd_repeat();
+            }
+        }
+#endif
 #ifndef TARGET_WEBOS
         static char last_console[192] = {0};
         if (strcmp(app.status, last_console) != 0) {

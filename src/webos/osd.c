@@ -41,6 +41,8 @@ void osd_show(const char *title, const char **lines, int nlines, int selected) {
  * after signal hiccups. */
 static ISVCEncoder *encoder = NULL;
 static int frame_no = 0;
+static uint8_t *last_au = NULL;
+static size_t last_au_len = 0;
 
 static bool osd_encoder_init(void) {
     if (encoder != NULL) return true;
@@ -116,5 +118,17 @@ void osd_present(void) {
         }
     }
     media_video_feed(au, total);
-    free(au);
+    /* Stash the AU: the VDEC pipeline needs continuous feed to start
+     * displaying (2 one-shot frames never trigger output). The main
+     * loop re-feeds this copy at ~5Hz while menus show. */
+    free(last_au);
+    last_au = au;
+    last_au_len = total;
+    return;
+}
+
+void osd_repeat(void) {
+    if (last_au != NULL && last_au_len > 0) {
+        media_video_feed(last_au, last_au_len);
+    }
 }
