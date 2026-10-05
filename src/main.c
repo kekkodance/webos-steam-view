@@ -289,6 +289,15 @@ int main(int argc, char **argv) {
     SDL_Window *win = SDL_CreateWindow("Steam View", 0, 0, 1920, 1080,
                                        SDL_WINDOW_FULLSCREEN);
     if (win != NULL) {
+        /* Commit a fully transparent frame: maps the surface (clears
+         * the splash) while the LGNC video plane blends through. */
+        SDL_Renderer *ren = SDL_CreateRenderer(win, -1, 0);
+        if (ren != NULL) {
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 0);
+            SDL_RenderClear(ren);
+            SDL_RenderPresent(ren);
+        }
         TRACE("window ok");
     } else {
         TRACE("window FAILED: %s", SDL_GetError());
