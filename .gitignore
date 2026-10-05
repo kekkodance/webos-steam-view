@@ -1,0 +1,11 @@
+build*/
+dist/
+third_party/*/build/
+third_party/ihslib/build/
+*.o
+*.a
+*.dll
+*.exe
+.steamview-identity
+third_party/mbedtls-tar/
+third_party/sdl2-pc/

@@ -1,0 +1,15 @@
+{
+    "id": "com.kekko.steamview",
+    "version": "@PROJECT_VERSION@",
+    "vendor": "Kekko",
+    "type": "native",
+    "main": "bin/steamview",
+    "title": "Steam View",
+    "icon": "icon.png",
+    "iconColor": "#ffffff",
+    "largeIcon": "icon_large.png",
+    "splashBackground": "splash.png",
+    "appDescription": "Steam Frame spectator view via Steam Remote Play",
+    "supportTouchMode": "mouse",
+    "useAllMouseButtons": true
+}

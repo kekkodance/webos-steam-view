@@ -1,0 +1,6 @@
+# shell scripts must stay LF: CI runners execute them with bash
+*.sh text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.json text
+*.png binary

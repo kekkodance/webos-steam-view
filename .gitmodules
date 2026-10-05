@@ -1,0 +1,19 @@
+[submodule "third_party/ihslib"]
+	path = third_party/ihslib
+	url = https://github.com/mariotaku/ihslib.git
+	branch = plume-fixes
+[submodule "third_party/protobuf-c"]
+	path = third_party/protobuf-c
+	url = https://github.com/protobuf-c/protobuf-c.git
+[submodule "third_party/SDL-webOS"]
+	path = third_party/SDL-webOS
+	url = https://github.com/webosbrew/SDL-webOS.git
+	branch = webOS-2.30.x
+[submodule "third_party/SDL_net"]
+	path = third_party/SDL_net
+	url = https://github.com/libsdl-org/SDL_net.git
+	branch = SDL2
+[submodule "third_party/lvgl"]
+	path = third_party/lvgl
+	url = https://github.com/mariotaku/lvgl.git
+	branch = master

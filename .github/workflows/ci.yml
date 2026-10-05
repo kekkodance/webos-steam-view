@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  host:
+    name: Host build + smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libsdl2-dev libsdl2-net-dev python3
+      - name: Apply ihslib patches
+        run: ./scripts/apply-ihslib-patches.sh
+      - name: Build
+        run: |
+          cmake -B build-host -DCMAKE_BUILD_TYPE=Release -DSTEAMVIEW_BUILD_TESTS=ON .
+          cmake --build build-host -j"$(nproc)"
+      - name: Smoke run (5s, no host expected on runners)
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          timeout 5 build-host/steamview; rc=$?; [ $rc -eq 124 ] || [ $rc -eq 0 ]
+
+  webos:
+    name: webOS IPK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake python3
+      - name: Download webOS NDK
+        uses: robinraju/release-downloader@v1.12
+        with:
+          repository: openlgtv/buildroot-nc4
+          tag: webos-a38c582
+          fileName: arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
+          out-file-path: /tmp
+          extract: true
+      - name: Relocate NDK
+        run: /tmp/arm-webos-linux-gnueabi_sdk-buildroot/relocate-sdk.sh
+      - name: Apply ihslib patches
+        run: ./scripts/apply-ihslib-patches.sh
+      - name: Build IPK
+        run: ./scripts/build-webos.sh
+        env:
+          TOOLCHAIN_FILE: /tmp/arm-webos-linux-gnueabi_sdk-buildroot/share/buildroot/toolchainfile.cmake
+      - name: Upload IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: steamview-webos-ipk
+          path: dist/*.ipk
+          if-no-files-found: error
