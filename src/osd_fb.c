@@ -32,6 +32,8 @@ static void osd_clear(uint8_t bg) {
     memset(frame_uv, 128, OSD_W * OSD_H / 2);
 }
 
+/* 2x pixel-doubled 5x7 text: at 1280x720 the native 5x7 glyphs are
+ * unreadable from the couch; doubling gives effective 10x14. */
 static void osd_text(const char *text, int x, int y, uint8_t fg) {
     for (const char *p = text; *p; p++) {
         unsigned char c = (unsigned char) *p;
@@ -41,14 +43,18 @@ static void osd_text(const char *text, int x, int y, uint8_t fg) {
             unsigned char bits = glyph[col];
             for (int row = 0; row < 7; row++) {
                 if (bits & (1 << row)) {
-                    int px = x + col, py = y + row;
-                    if (px >= 0 && px < OSD_W && py >= 0 && py < OSD_H) {
-                        frame_y[py * OSD_W + px] = fg;
+                    for (int dy = 0; dy < 2; dy++) {
+                        for (int dx = 0; dx < 2; dx++) {
+                            int px = x + col * 2 + dx, py = y + row * 2 + dy;
+                            if (px >= 0 && px < OSD_W && py >= 0 && py < OSD_H) {
+                                frame_y[py * OSD_W + px] = fg;
+                            }
+                        }
                     }
                 }
             }
         }
-        x += 6;
+        x += 12;
     }
 }
 
@@ -56,18 +62,18 @@ static void osd_text(const char *text, int x, int y, uint8_t fg) {
 void osd_fb_show(const char *title, const char **lines, int nlines, int selected) {
     if (!osd_fb_init()) return;
     osd_clear(16);
-    osd_text(title, 32, 24, 235);
+    osd_text(title, 64, 48, 235);
     for (int i = 0; i < nlines && i < 12; i++) {
-        int y = 64 + i * 20;
+        int y = 128 + i * 40;
         if (i == selected) {
-            for (int x = 24; x < OSD_W - 24; x++) {
-                for (int r = 0; r < 12; r++) {
-                    frame_y[(y - 2 + r) * OSD_W + x] = 90;
+            for (int x = 48; x < OSD_W - 48; x++) {
+                for (int r = 0; r < 24; r++) {
+                    frame_y[(y - 4 + r) * OSD_W + x] = 90;
                 }
             }
-            osd_text(lines[i], 32, y, 255);
+            osd_text(lines[i], 64, y, 255);
         } else {
-            osd_text(lines[i], 32, y, 180);
+            osd_text(lines[i], 64, y, 180);
         }
     }
 }

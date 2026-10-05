@@ -6,8 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OSD_W 640
-#define OSD_H 360
+#define OSD_W 1280
+#define OSD_H 720
 
 bool osd_fb_init(void);
 void osd_fb_quit(void);
