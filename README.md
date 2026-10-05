@@ -1,8 +1,13 @@
-# Steam View
+<div align="center">
+  <h1>
+    Steam View
+  </h1>
+  <p>Watch any Steam Remote Play host on a rooted webOS 1-4 LG TV.</p>
+  <img width="1280" height="720" alt="image" src="https://github.com/user-attachments/assets/ea3b28e3-244d-46ff-8019-80dafd205d88" />
 
-Watch any Steam Remote Play host on a rooted webOS 1-4 LG TV.
-I built it for my Steam Frame's Spectator View, but it works with a PC or anything
-else running Steam.
+  <p>I built it for my Steam Frame's Spectator View, but it works with a PC or anything
+else running Steam.</p>
+</div>
 
 How it works:
 
