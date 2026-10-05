@@ -352,6 +352,13 @@ int main(int argc, char **argv) {
         TRACE("media_init FAILED");
     }
     TRACE("media ok");
+    /* TEMP-DIAG: pre-open the video plane too, mimicking an app with an
+     * active video surface, before SDL touches Wayland. */
+    extern bool media_video_open(int width, int height);
+    if (!media_video_open(1280, 720)) {
+        TRACE("video pre-open FAILED");
+    }
+    TRACE("video pre-open ok");
 #endif
     /* Split init, mirroring moonlight-tv: bare init first (lets the backport
      * settle + hints register), video subsystem after. Single-shot
