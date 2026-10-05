@@ -245,9 +245,22 @@ int main(int argc, char **argv) {
     }
     TRACE("media ok");
 #endif
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+    /* Split init, mirroring moonlight-tv: bare init first (lets the backport
+     * settle + hints register), video subsystem after. Single-shot
+     * SDL_Init(VIDEO|EVENTS) hangs inside Wayland setup on webOS 2. */
+    if (SDL_Init(0) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
-        TRACE("SDL_Init FAILED: %s", SDL_GetError());
+        TRACE("SDL_Init(0) FAILED: %s", SDL_GetError());
+        return 1;
+    }
+    TRACE("sdl base ok");
+#ifdef TARGET_WEBOS
+    SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_BACK", "true");
+    SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_EXIT", "true");
+#endif
+    if (SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+        fprintf(stderr, "SDL video: %s\n", SDL_GetError());
+        TRACE("SDL video FAILED: %s", SDL_GetError());
         return 1;
     }
     TRACE("sdl ok");
