@@ -72,7 +72,9 @@ if (TARGET_WEBOS)
     add_executable(steamview ${SOURCES})
     target_include_directories(steamview PRIVATE src src/lgnc/include ${UI_INCLUDE_DIRS})
     target_compile_definitions(steamview PRIVATE APPID="${WEBOS_APPINFO_ID}" TARGET_WEBOS)
-    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib lvgl ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES})
+    # dlopen probe needs libdl; the sysroot static libdl.a is broken
+    # (undefined __dlsym), so select the shared object explicitly.
+    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib lvgl ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} -l:libdl.so.2)
     target_include_directories(steamview SYSTEM PRIVATE ${LGNCOPENAPI_INCLUDE_DIRS} ${OPUS_INCLUDE_DIRS})
     # ext_opus installs headers at build time; the app must wait for them.
     if (TARGET ext_opus)
