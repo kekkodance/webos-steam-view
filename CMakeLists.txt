@@ -74,6 +74,10 @@ if (TARGET_WEBOS)
     target_compile_definitions(steamview PRIVATE APPID="${WEBOS_APPINFO_ID}" TARGET_WEBOS)
     target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib lvgl ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} dl)
     target_include_directories(steamview SYSTEM PRIVATE ${LGNCOPENAPI_INCLUDE_DIRS} ${OPUS_INCLUDE_DIRS})
+    # ext_opus installs headers at build time; the app must wait for them.
+    if (TARGET ext_opus)
+        add_dependencies(steamview ext_opus)
+    endif ()
 
     install(TARGETS steamview RUNTIME DESTINATION bin)
     # runtime libs to ship in the IPK (set by the SDL2 backport module)
