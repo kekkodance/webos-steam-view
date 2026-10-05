@@ -22,11 +22,11 @@ Nothing gets installed on the host. The TV is just a Remote Play client.
 
 ## Why not IHSplay?
 
-[ihsplay](https://github.com/mariotaku/ihsplay) is the obvious answer and
-I tried it first. It crashes on startup on webOS 2
+I tried [IHSplay](https://github.com/mariotaku/ihsplay) first. It crashes on startup on webOS 2
 ([#29](https://github.com/mariotaku/ihsplay/issues/29)): the display init
-divides by a zero window size on the old Wayland stack. The protocol code
-is fine, so this app reuses the same protocol library and just does its own
+divides by a zero window size on the old Wayland stack.
+
+The protocol code is fine, so this app reuses the same protocol library and just does its own
 simpler display layer: fixed 1280x720 software UI surface, video on the LGNC
 plane where it belongs.
 
