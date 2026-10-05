@@ -84,9 +84,10 @@ void osd_present(void) {
     pic.pData[2] = (uint8_t *) v;
     SFrameBSInfo info;
     memset(&info, 0, sizeof(info));
-    if (frame_no % 30 == 0) {
-        (*encoder)->ForceIntraFrame(encoder, true);
-    }
+    /* Every menu encode is an IDR: repeats of the stashed AU must decode
+     * standalone (no reference drift), and each menu change needs a clean
+     * random-access point for the VDEC. */
+    (*encoder)->ForceIntraFrame(encoder, true);
     if ((*encoder)->EncodeFrame(encoder, &pic, &info) != cmResultSuccess) { osd_trace("encode FAILED"); return; }
     frame_no++;
     osd_trace("encoded frame %d size %d layers %d", frame_no, info.iFrameSizeInBytes, info.iLayerNum);
