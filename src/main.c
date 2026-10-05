@@ -273,19 +273,29 @@ int main(int argc, char **argv) {
     }
     TRACE("media ok");
 #endif
-    if (SDL_Init(
-#ifdef TARGET_WEBOS
-            SDL_INIT_EVENTS
-#else
-            SDL_INIT_VIDEO | SDL_INIT_EVENTS
-#endif
-        ) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         TRACE("SDL_Init FAILED: %s", SDL_GetError());
         return 1;
     }
     TRACE("sdl ok");
-#ifndef TARGET_WEBOS
+#ifdef TARGET_WEBOS
+    /* Fullscreen window: clears the splash, takes focus, delivers remote
+     * keys. Video stays on the LGNC plane; the window is a black host. */
+    SDL_Window *win = SDL_CreateWindow("Steam View", 0, 0, 1920, 1080,
+                                       SDL_WINDOW_FULLSCREEN_DESKTOP);
+    if (win != NULL) {
+        SDL_Renderer *ren = SDL_CreateRenderer(win, -1, 0);
+        if (ren != NULL) {
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+            SDL_RenderClear(ren);
+            SDL_RenderPresent(ren);
+        }
+        TRACE("window ok");
+    } else {
+        TRACE("window FAILED: %s", SDL_GetError());
+    }
+#else
     if (!host_video_init()) {
         fprintf(stderr, "host video init failed\n");
         return 1;
