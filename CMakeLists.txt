@@ -35,11 +35,12 @@ set(LV_CONF_DIR ${CMAKE_SOURCE_DIR}/src/ui CACHE PATH "" FORCE)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
 if (TARGET_WEBOS)
-    # SDL2 backport for webOS (webosbrew build, like moonlight-tv ships);
+    # SDL2 backport for webOS, built from source (branch tip tracks the
+    # compositor better than the prebuilt tarball);
     # must resolve before find_package(SDL2) so it takes precedence.
     # It also must come before add_subdirectory(lvgl): LVGL's SDL driver
     # needs SDL2::SDL2's includes on its own compile lines.
-    set(SDL2_BACKPORT_RELEASE "release-2.30.12-webos.6")
+    set(SDL2_BACKPORT_REVISION "webOS-2.30.x")
     include(ExternalSDL2BackportForWebOS)
 endif ()
 
@@ -49,6 +50,8 @@ find_package(SDL2 REQUIRED)
 # breaks CPack staging (non-root). We link it statically; nothing of LVGL's
 # belongs in the IPK.
 add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
+# Source-built SDL: headers land at build time, so order LVGL after them.
+add_dependencies(lvgl ext_sdl2_backport)
 target_link_libraries(lvgl PUBLIC SDL2::SDL2)
 # ---- ihslib (Steam In-Home Streaming protocol) ----
 # Resolve deps first so their variables are visible at this scope
