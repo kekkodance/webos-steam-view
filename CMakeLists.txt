@@ -12,34 +12,20 @@ endif ()
 set(SOURCES
         src/ihs_glue.c
         src/font5x7.c
-        src/main.c)
+        src/main.c
+        src/osd_fb.c)
 
 if (TARGET_WEBOS)
-    # TV: no SDL, no LVGL. Headless: discovery + PIN + LGNC stream.
-    # Remote keys come from SDL events (system SDL, events-only init).
-    list(APPEND SOURCES src/webos/media.c)
+    # TV: OSD menus encoded to H.264 for the LGNC plane. Remote keys via
+    # SDL events (no video init: backport Wayland hangs old compositors).
+    list(APPEND SOURCES src/webos/media.c src/webos/osd.c)
+    include(ExternalOpenH264)
 else ()
-    # Host: full pretty UI for development.
+    # Host: OSD menus + decoded video in an SDL window. Same menus as TV.
     list(APPEND SOURCES
-            src/ui/ui.c
-            src/ui/ui_port.c
-            assets/fonts/motiva_20.c
-            assets/fonts/motiva_28.c
-            assets/fonts/motiva_40.c
-            assets/fonts/motiva_medium_28.c
-            assets/fonts/motiva_bold_28.c
-            assets/fonts/motiva_pin_96.c
-            tests/host_stubs.c)
-endif ()
-
-if (NOT TARGET_WEBOS)
-    # ---- LVGL v9 (host UI only; the TV runs headless) ----
-    # lv_conf.h lives in src/ui; LV_CONF_INCLUDE_SIMPLE picks it up.
-    set(LV_CONF_INCLUDE_SIMPLE ON CACHE BOOL "" FORCE)
-    set(LV_CONF_DIR ${CMAKE_SOURCE_DIR}/src/ui CACHE PATH "" FORCE)
-    set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
-    set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
-    set(UI_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/ui ${CMAKE_SOURCE_DIR}/third_party/lvgl)
+            src/host/host_video.c
+            src/host/host_media.c)
+    include(ExternalOpenH264)
 endif ()
 
 if (TARGET_WEBOS)
@@ -53,11 +39,6 @@ endif ()
 if (NOT TARGET_WEBOS)
     find_package(SDL2 REQUIRED)
     # (FindSDL2 also creates SDL2::SDL2net from third_party/SDL_net when present)
-    # EXCLUDE_FROM_ALL: LVGL's install rules target an absolute prefix that
-    # breaks CPack staging (non-root). We link it statically; nothing of LVGL's
-    # belongs in the IPK.
-    add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
-    target_link_libraries(lvgl PUBLIC SDL2::SDL2)
 endif ()
 # ---- ihslib (Steam In-Home Streaming protocol) ----
 # Resolve deps first so their variables are visible at this scope
@@ -81,25 +62,32 @@ if (TARGET_WEBOS)
     add_executable(steamview ${SOURCES})
     target_include_directories(steamview PRIVATE src src/lgnc/include)
     target_compile_definitions(steamview PRIVATE APPID="${WEBOS_APPINFO_ID}" TARGET_WEBOS)
-    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} -l:libdl.so.2)
-    target_include_directories(steamview SYSTEM PRIVATE ${LGNCOPENAPI_INCLUDE_DIRS} ${OPUS_INCLUDE_DIRS})
+    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} ${OPENH264_LIBRARIES} -l:libdl.so.2 stdc++)
+    target_include_directories(steamview SYSTEM PRIVATE ${LGNCOPENAPI_INCLUDE_DIRS} ${OPUS_INCLUDE_DIRS} ${OPENH264_INCLUDE_DIRS})
     # ext_opus installs headers at build time; the app must wait for them.
     if (TARGET ext_opus)
         add_dependencies(steamview ext_opus)
+    endif ()
+    if (TARGET ext_openh264)
+        add_dependencies(steamview ext_openh264)
     endif ()
 
     install(TARGETS steamview RUNTIME DESTINATION bin)
     # runtime libs to ship in the IPK (set by the SDL2 backport module)
     include(PackageWebOS)
 else ()
-    # ---- host build (UI/protocol smoke tests; media stubbed) ----
+    # ---- host build: OSD menus + decoded video in SDL window ----
     add_executable(steamview ${SOURCES})
     target_compile_definitions(steamview PRIVATE SDL_MAIN_HANDLED)
-    target_include_directories(steamview PRIVATE src ${UI_INCLUDE_DIRS})
+    target_include_directories(steamview PRIVATE src)
+    target_include_directories(steamview SYSTEM PRIVATE ${OPENH264_INCLUDE_DIRS})
     if (TARGET SDL2::SDL2net)
-        target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib lvgl SDL2::SDL2net ${MBEDCRYPTO_LIBRARY})
+        target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib ${OPENH264_LIBRARIES} stdc++ SDL2::SDL2net ${MBEDCRYPTO_LIBRARY})
     else ()
-        target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib lvgl ${MBEDCRYPTO_LIBRARY})
+        target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib ${OPENH264_LIBRARIES} stdc++ ${MBEDCRYPTO_LIBRARY})
+    endif ()
+    if (TARGET ext_openh264)
+        add_dependencies(steamview ext_openh264)
     endif ()
     if (WIN32)
         target_link_libraries(steamview PRIVATE ws2_32)

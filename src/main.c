@@ -1,12 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
- * Steam View  -  main loop. SDL window for status/PIN UI; video is decoded on
- * the LGNC plane, so the SDL surface is only used for text.
+ * Steam View  -  menus are OSD frames (5x7 text to I420) on both platforms.
+ * TV encodes them to H.264 for the LGNC plane; host blits them to SDL.
+ * Stream video: LGNC plane on TV, OpenH264 decode to SDL on host.
  */
 #include "app.h"
 #include "media.h"
-#ifndef TARGET_WEBOS
-#include "ui/ui.h"
+#include "osd_fb.h"
+#ifdef TARGET_WEBOS
+#include "webos/osd.h"
+#else
+#include "host/host_video.h"
 #endif
 
 #include <ihslib.h>
@@ -16,7 +20,6 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
 #ifdef _WIN32
@@ -51,6 +54,9 @@ static void on_signal(int sig) {
 /* No on-TV UI: the trace file doubles as the status display. PIN and state
  * go here; read with: cat /tmp/steamview-trace.log */
 static FILE *trace_fp = NULL;
+#define TRACE(fmt, ...) do { if (trace_fp) { fprintf(trace_fp, fmt "\n", ##__VA_ARGS__); fflush(trace_fp); } } while (0)
+#else
+#define TRACE(fmt, ...) do {} while (0)
 #endif
 
 static App app;
@@ -185,58 +191,57 @@ void app_request_rediscover(App *a) {
     a->rediscover = true;
 }
 
-/* TV has no UI: log state changes to trace/console, auto-pick the first
- * host and auto-request the stream. PIN goes to the trace log. */
-static int g_ui_screen = -1;
+/* OSD menus on both platforms: host picker + PIN screen, Up/Down/OK.
+ * TV encodes frames to the LGNC plane; host blits to the SDL window. */
+static int g_ui_state = -1;
+static int g_ui_hosts = -1;
+static char g_ui_pin[16] = {0};
+
+static void ui_present(void) {
+    char pin_line[32];
+    if (app.state == APP_STATE_AUTHORIZING && app.pin_len > 0) {
+        snprintf(pin_line, sizeof(pin_line), "PIN: %s", app.pin);
+        const char *plines[] = {pin_line, "Type this PIN into Steam",
+                                "on the host to pair."};
+        osd_fb_show("Pair this TV", plines, 3, -1);
+    } else if (app.host_count > 0) {
+        const char *names[APP_MAX_HOSTS];
+        for (int i = 0; i < app.host_count; i++) names[i] = app.hosts[i].name;
+        osd_fb_show("Choose a host", names, app.host_count, app.host_selected);
+    } else {
+        static const char *searching[] = {"Searching for Steam hosts..."};
+        osd_fb_show("Steam View", searching, 1, -1);
+    }
+#ifdef TARGET_WEBOS
+    osd_present();
+#else
+    {
+        const uint8_t *y, *u, *v;
+        osd_fb_planes(&y, &u, &v);
+        if (y != NULL && u != NULL && v != NULL) {
+            host_video_osd(y, u, v, OSD_W, OSD_H);
+        }
+    }
+#endif
+}
 
 static void ui_sync(AppState state) {
-#ifdef TARGET_WEBOS
-    if ((int) state != g_ui_screen) {
-        g_ui_screen = (int) state;
-        TRACE("state=%d hosts=%d pin=%s", (int) state, app.host_count,
+    (void) state;
+    bool changed = ((int) app.state != g_ui_state ||
+                    app.host_count != g_ui_hosts ||
+                    strcmp(app.pin, g_ui_pin) != 0);
+    if (changed) {
+        g_ui_state = (int) app.state;
+        g_ui_hosts = app.host_count;
+        snprintf(g_ui_pin, sizeof(g_ui_pin), "%s", app.pin);
+        ui_present();
+        TRACE("state=%d hosts=%d pin=%s", (int) app.state, app.host_count,
               app.pin_len > 0 ? app.pin : "-");
-        printf("state=%d hosts=%d pin=%s status=%s\n", (int) state,
+        printf("state=%d hosts=%d pin=%s status=%s\n", (int) app.state,
                app.host_count, app.pin_len > 0 ? app.pin : "-",
                app.status);
         fflush(stdout);
     }
-    /* first host seen: pick it and go */
-    if ((state == APP_STATE_DISCOVERY || state == APP_STATE_HOST_PICK) &&
-        app.host_count > 0 && app.host_selected < 0) {
-        app.host_selected = 0;
-        app.state = APP_STATE_HOST_PICK;
-        TRACE("auto-pick host 0: %s", app.hosts[0].name);
-        app_request_stream(&app);
-    }
-#else
-    int want = -1;
-    switch (state) {
-        case APP_STATE_DISCOVERY:
-        case APP_STATE_HOST_PICK:
-            want = UI_HOSTS;
-            break;
-        case APP_STATE_REQUESTING:
-        case APP_STATE_AUTHORIZING:
-            want = UI_PAIRING;
-            break;
-        case APP_STATE_STREAMING:
-            want = UI_STREAMING;
-            break;
-        case APP_STATE_ERROR:
-            want = UI_ERROR;
-            break;
-    }
-    if (want != g_ui_screen) {
-        g_ui_screen = want;
-        ui_show(want, &app);
-    } else if (want == UI_HOSTS) {
-        /* Host list grows after the screen builds (discovery is async):
-         * rebuild the cards so "Searching..." becomes the picker. */
-        ui_set_hosts(&app);
-    }
-    if (want == UI_PAIRING) ui_set_pin(app.pin);
-    if (want == UI_STREAMING) ui_set_stats(app.width, app.height, app.frames, app.audio_frames);
-#endif
 }
 
 int main(int argc, char **argv) {
@@ -247,12 +252,8 @@ int main(int argc, char **argv) {
 #endif
 
 #ifdef TARGET_WEBOS
-    /* TV has no visible stderr under the app manager: trace startup to a
-     * file so a splash-hang can be located. */
-    FILE *trace = fopen("/tmp/steamview-trace.log", "w");
-#define TRACE(fmt, ...) do { if (trace) { fprintf(trace, fmt "\n", ##__VA_ARGS__); fflush(trace); } } while (0)
-#else
-#define TRACE(fmt, ...) do {} while (0)
+    /* TV has no visible stderr under the app manager: trace to the file. */
+    trace_fp = fopen("/tmp/steamview-trace.log", "w");
 #endif
 
     memset(&app, 0, sizeof(app));
@@ -266,32 +267,30 @@ int main(int argc, char **argv) {
     TRACE("identity ok");
 
 #ifdef TARGET_WEBOS
-    /* Media first (LGNC plane for video). No SDL video init on webOS: the
-     * backport Wayland init hangs on old compositors. SDL events (remote
-     * keys) work without video. No on-TV UI: status goes to the trace log
-     * and stdout; the PIN is read from /tmp/steamview-trace.log. */
+    /* Media first (LGNC plane for video + OSD menus). */
     if (!media_init()) {
         TRACE("media_init FAILED");
     }
     TRACE("media ok");
 #endif
-    if (SDL_Init(SDL_INIT_EVENTS) != 0) {
+    if (SDL_Init(
+#ifdef TARGET_WEBOS
+            SDL_INIT_EVENTS
+#else
+            SDL_INIT_VIDEO | SDL_INIT_EVENTS
+#endif
+        ) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         TRACE("SDL_Init FAILED: %s", SDL_GetError());
         return 1;
     }
-    TRACE("sdl events ok");
+    TRACE("sdl ok");
 #ifndef TARGET_WEBOS
-    /* LVGL owns the window from here: lv_sdl_window_create() builds its own
-     * SDL window + renderer + framebuffer (software path, no EGL/Wayland).
-     * The old fixed-size window + bitmap render() is retired. */
-    extern void ui_port_init(int width, int height);
-    extern void ui_port_set_title(const char *title);
-    ui_init();
-    TRACE("lvgl init ok");
-    ui_port_init(1280, 720);
-    TRACE("ui_port ok");
-    ui_port_set_title("Steam View");
+    if (!host_video_init()) {
+        fprintf(stderr, "host video init failed\n");
+        return 1;
+    }
+    TRACE("host video ok");
 #endif
     IHS_Init();
     TRACE("ihs init ok");
@@ -367,10 +366,7 @@ int main(int argc, char **argv) {
                 app.stream_retry = false;
             }
         }
-        /* LVGL UI: rebuild screens on state change, live-update values,
-         * then pump the LVGL timer (renders + presents via SDL driver).
-         * Console prints on status change only  -  the old per-tick print
-         * spammed "1 host found" every 50ms. */
+        /* OSD menus refresh on state change; console echoes status. */
         ui_sync(app.state);
 #ifndef TARGET_WEBOS
         static char last_console[192] = {0};
@@ -379,7 +375,6 @@ int main(int argc, char **argv) {
             printf("%s | state=%d frames=%lu\n", app.status, app.state, app.frames);
             fflush(stdout);
         }
-        ui_tick(50);
 #endif
         SDL_Delay(50);
     }
