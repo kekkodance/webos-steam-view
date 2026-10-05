@@ -286,8 +286,14 @@ int main(int argc, char **argv) {
     }
     TRACE("sdl base ok");
 #ifdef TARGET_WEBOS
+    /* Full moonlight-tv hint set: cursor + key policies + bluetooth ignore.
+     * The backport negotiates these with the compositor during video init. */
     SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_BACK", "true");
     SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_EXIT", "true");
+    SDL_SetHint("SDL_WEBOS_CURSOR_SLEEP_TIME", "5000");
+    SDL_SetHint("SDL_WEBOS_CURSOR_FREQUENCY", "60");
+    SDL_SetHint("SDL_WEBOS_CURSOR_CALIBRATION_DISABLE", "true");
+    SDL_SetHint("SDL_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES", "0x057e/0x0000");
 #endif
     if (SDL_InitSubSystem(SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "SDL events: %s\n", SDL_GetError());
