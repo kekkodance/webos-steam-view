@@ -97,7 +97,28 @@ void video_log_to_trace(void) {
 /* TEMP-DIAG: dlopen each lib SDL will load, tracing each. The hung one is
  * SDL's hang. RTLD_GLOBAL so SDL's later dlopen reuses the handles. */
 #include <dlfcn.h>
+#ifndef _WIN32
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <errno.h>
+#endif
 void video_probe_dlopen(void) {
+    /* TEMP-DIAG: can we even open the compositor socket ourselves? */
+    {
+        int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        struct sockaddr_un addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        snprintf(addr.sun_path, sizeof(addr.sun_path), "%s/wayland-0",
+                 getenv("XDG_RUNTIME_DIR") ? getenv("XDG_RUNTIME_DIR") : "/tmp");
+        int rc = connect(fd, (struct sockaddr *) &addr, sizeof(addr));
+        if (trace_fp != NULL) {
+            fprintf(trace_fp, "[probe] connect %s -> fd=%d rc=%d errno=%d\n",
+                    addr.sun_path, fd, rc, rc ? errno : 0);
+            fflush(trace_fp);
+        }
+        if (fd >= 0) close(fd);
+    }
     static const char *envs[] = {
         "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
         "SDL_VIDEODRIVER", "APPID", "HOME", NULL,
