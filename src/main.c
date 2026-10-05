@@ -274,9 +274,10 @@ int main(int argc, char **argv) {
     TRACE("media ok");
 #endif
     /* Claim remote keys from the compositor (else Back opens the
-     * launcher and never reaches us). Same as ihsplay. */
-    SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
-    SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_EXIT, "true");
+     * launcher and never reaches us). Same as ihsplay. Literal strings:
+     * the upstream SDL branch CI builds may predate the macros. */
+    SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_BACK", "true");
+    SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_EXIT", "true");
     /* Transparency hint BEFORE SDL_Init: the fork reads it in VideoInit
      * and registers a callback that clears the surface opaque region on
      * late changes. Early + consistent from the start. */
