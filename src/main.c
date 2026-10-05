@@ -237,6 +237,14 @@ int main(int argc, char **argv) {
     identity_load();
     TRACE("identity ok");
 
+#ifdef TARGET_WEBOS
+    /* Moonlight-tv order: LGNC/NDL media first, SDL video after. The Wayland
+     * display init hangs/aborts on webOS 2 if the media layer is not up. */
+    if (!media_init()) {
+        TRACE("media_init FAILED");
+    }
+    TRACE("media ok");
+#endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         TRACE("SDL_Init FAILED: %s", SDL_GetError());
