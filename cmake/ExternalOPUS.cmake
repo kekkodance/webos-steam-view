@@ -46,7 +46,7 @@ set_target_properties(ext_opus_target PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR
 
 add_dependencies(ext_opus_target ext_opus)
 
-set(OPUS_INCLUDE_DIRS ${INSTALL_DIR}/include/opus)
+set(OPUS_INCLUDE_DIRS ${INSTALL_DIR}/include)
 set(OPUS_LIBRARIES ext_opus_target)
 set(OPUS_FOUND TRUE)
 
