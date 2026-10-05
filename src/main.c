@@ -102,6 +102,30 @@ void video_log_to_trace(void) {
 #include <sys/un.h>
 #include <errno.h>
 #endif
+#ifdef TARGET_WEBOS
+/* TEMP-DIAG registry callbacks (file scope, no trampolines). */
+static void wl_reg_global(void *data, void *reg, unsigned int name,
+                          const char *iface, unsigned int ver) {
+    (void) data;
+    (void) reg;
+    extern FILE *trace_fp;
+    if (trace_fp != NULL) {
+        extern FILE *trace_fp;
+        fprintf(trace_fp, "[wl] global %u %s v%u\n", name, iface, ver);
+        fflush(trace_fp);
+    }
+}
+
+static void wl_reg_remove(void *data, void *reg, unsigned int name) {
+    (void) data;
+    (void) reg;
+    (void) name;
+}
+
+const void *wl_reg_listener_tbl[2] = {(const void *) wl_reg_global,
+                                       (const void *) wl_reg_remove};
+#endif
+
 void video_probe_dlopen(void) {
     /* TEMP-DIAG: replicate SDL's Wayland steps manually, tracing each. */
     void *wl = dlopen("libwayland-client.so.0", RTLD_NOW | RTLD_GLOBAL);
@@ -136,6 +160,19 @@ void video_probe_dlopen(void) {
         int rc = p_roundtrip(disp);
         if (trace_fp != NULL) {
             fprintf(trace_fp, "[wl] roundtrip -> %d\n", rc);
+            fflush(trace_fp);
+        }
+    }
+    /* TEMP-DIAG: add a registry listener and roundtrip again, listing
+     * globals. If the compositor sends nothing, SDL's output scan hangs
+     * on empty display data. Callbacks are file-scope (no trampolines). */
+    {
+        int (*p_add_listener)(void *, const void *, void *) =
+            dlsym(wl, "wl_proxy_add_listener");
+        extern const void *wl_reg_listener_tbl[2];
+        if (trace_fp != NULL) {
+            fprintf(trace_fp, "[wl] table=%p add_listener=%p\n",
+                    (const void *) wl_reg_listener_tbl, (void *) p_add_listener);
             fflush(trace_fp);
         }
     }
