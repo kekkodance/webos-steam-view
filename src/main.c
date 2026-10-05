@@ -273,11 +273,13 @@ int main(int argc, char **argv) {
     }
     TRACE("media ok");
 #endif
+    /* Claim remote keys from the compositor (else Back opens the
+     * launcher and never reaches us). Same as ihsplay. */
+    SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
+    SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_EXIT, "true");
     /* Transparency hint BEFORE SDL_Init: the fork reads it in VideoInit
      * and registers a callback that clears the surface opaque region on
-     * late changes. Setting it after init cleared the region on the live
-     * window while EGL stayed opaque -> compositor dropped the surface
-     * (builds 21/22 splash-stuck). Early + consistent from the start. */
+     * late changes. Early + consistent from the start. */
     SDL_SetHint(SDL_HINT_VIDEO_EGL_ALLOW_TRANSPARENCY, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
