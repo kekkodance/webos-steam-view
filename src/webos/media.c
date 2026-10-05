@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+#define _GNU_SOURCE /* memmem */
 /*
  * LGNC (NetCast legacy) media layer for webOS 1.x-4.x TVs.
  *
@@ -14,7 +15,7 @@
 #include <lgnc_plugin.h>
 #include <lgnc_directaudio.h>
 #include <lgnc_directvideo.h>
-#include <opus/opus_multistream.h>
+#include <opus/opus.h>
 #include <sys/mman.h>
 
 #include <dlfcn.h>
@@ -145,11 +146,11 @@ bool media_audio_open_pcm(int sample_rate, int channels) {
         state.audio_open = false;
     }
     if (state.opus != NULL) {
-        opus_multistream_decoder_destroy(state.opus);
+        opus_decoder_destroy(state.opus);
         state.opus = NULL;
     }
     int err = 0;
-    state.opus = opus_multistream_decoder_create(sample_rate, channels, 0, NULL, &err);
+    state.opus = opus_decoder_create(sample_rate, channels, &err);
     if (state.opus == NULL || err != OPUS_OK) {
         fprintf(stderr, "Opus decoder init failed: %d\n", err);
         return false;
@@ -162,7 +163,7 @@ bool media_audio_open_pcm(int sample_rate, int channels) {
             .bitPerSample = 16,
     };
     if (LGNC_DIRECTAUDIO_Open(&info) != 0) {
-        opus_multistream_decoder_destroy(state.opus);
+        opus_decoder_destroy(state.opus);
         state.opus = NULL;
         return false;
     }
@@ -178,8 +179,8 @@ bool media_audio_decode(const uint8_t *data, size_t len) {
         /* raw PCM passthrough */
         return LGNC_DIRECTAUDIO_Play(data, (unsigned int) len) == 0;
     }
-    int samples = opus_multistream_decode(state.opus, data, (int) len,
-                                          state.pcm, 1152, 0);
+    int samples = opus_decode(state.opus, data, (int) len,
+                              state.pcm, 1152, 0);
     if (samples <= 0) return false;
     size_t pcm_bytes = (size_t) samples * (size_t) state.channels * 2;
     return LGNC_DIRECTAUDIO_Play(state.pcm, (unsigned int) pcm_bytes) == 0;
@@ -191,7 +192,7 @@ void media_audio_close(void) {
     }
     state.audio_open = false;
     if (state.opus != NULL) {
-        opus_multistream_decoder_destroy(state.opus);
+        opus_decoder_destroy(state.opus);
         state.opus = NULL;
     }
 }
