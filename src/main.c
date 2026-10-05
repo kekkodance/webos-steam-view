@@ -258,7 +258,13 @@ int main(int argc, char **argv) {
     SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_BACK", "true");
     SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_EXIT", "true");
 #endif
-    if (SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+    if (SDL_InitSubSystem(SDL_INIT_EVENTS) != 0) {
+        fprintf(stderr, "SDL events: %s\n", SDL_GetError());
+        TRACE("SDL events FAILED: %s", SDL_GetError());
+        return 1;
+    }
+    TRACE("sdl events ok");
+    if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL video: %s\n", SDL_GetError());
         TRACE("SDL video FAILED: %s", SDL_GetError());
         return 1;
