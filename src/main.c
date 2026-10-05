@@ -279,13 +279,14 @@ int main(int argc, char **argv) {
         return 1;
     }
     TRACE("sdl ok");
-#ifdef TARGET_WEBOS
     /* Transparent window: clears the splash and takes focus, but the
      * compositor blends the LGNC video plane through. The hint must be
-     * set before window creation; it clears the surface opaque region. */
+     * set before window creation; it clears the surface opaque region.
+     * FULLSCREEN (not _DESKTOP): the fork's webOS shell path only calls
+     * set_fullscreen for the plain flag. */
     SDL_SetHint(SDL_HINT_VIDEO_EGL_ALLOW_TRANSPARENCY, "1");
     SDL_Window *win = SDL_CreateWindow("Steam View", 0, 0, 1920, 1080,
-                                       SDL_WINDOW_FULLSCREEN_DESKTOP);
+                                       SDL_WINDOW_FULLSCREEN);
     if (win != NULL) {
         TRACE("window ok");
     } else {
