@@ -16,12 +16,16 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake libsdl2-dev libsdl2-net-dev python3
+          sudo apt-get install -y cmake libsdl2-dev libsdl2-net-dev python3 ccache
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: host-${{ runner.os }}
       - name: Apply ihslib patches
         run: ./scripts/apply-ihslib-patches.sh
       - name: Build
         run: |
-          cmake -B build-host -DCMAKE_BUILD_TYPE=Release -DSTEAMVIEW_BUILD_TESTS=ON .
+          cmake -B build-host -DCMAKE_BUILD_TYPE=Release -DSTEAMVIEW_BUILD_TESTS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache .
           cmake --build build-host -j"$(nproc)"
       - name: Smoke run (5s, no host expected on runners)
         env:
@@ -44,8 +48,19 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake python3
+          sudo apt-get install -y cmake python3 ccache
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: webos-${{ runner.os }}
+      - name: Cache webOS NDK
+        id: cache-ndk
+        uses: actions/cache@v6
+        with:
+          path: /tmp/arm-webos-linux-gnueabi_sdk-buildroot
+          key: webos-ndk-a38c582-v1
       - name: Download webOS NDK
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
         uses: robinraju/release-downloader@v1.13
         with:
           repository: openlgtv/buildroot-nc4
@@ -54,6 +69,8 @@ jobs:
           out-file-path: /tmp
           extract: true
       - name: Relocate NDK
+        # Relocation bakes absolute paths; re-run when restored from cache
+        # (cheap) but skip re-extract (the slow part, handled by the cache).
         run: /tmp/arm-webos-linux-gnueabi_sdk-buildroot/relocate-sdk.sh
       - name: Apply ihslib patches
         run: ./scripts/apply-ihslib-patches.sh
@@ -61,6 +78,8 @@ jobs:
         run: ./scripts/build-webos.sh
         env:
           TOOLCHAIN_FILE: /tmp/arm-webos-linux-gnueabi_sdk-buildroot/share/buildroot/toolchainfile.cmake
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
       - name: Upload IPK
         uses: actions/upload-artifact@v7
         with:

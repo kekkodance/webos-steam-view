@@ -18,10 +18,14 @@
 #include <opus/opus.h>
 #include <sys/mman.h>
 
-#include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+/* Weak dlsym: the NDK sysroot's static libdl.a is broken (undefined
+ * __dlsym), so we link no libdl at all. If the loader provides dlsym the
+ * m3 fix uses it; otherwise the pointer is NULL and the fix is skipped. */
+__attribute__((weak)) void *dlsym(void *handle, const char *symbol);
 
 #ifndef APPID
 #define APPID "com.kekko.steamview"
@@ -59,6 +63,7 @@ static void m3_kadp_fix(void) {
     if (read_machine_name(machine_name, sizeof(machine_name)) != 0) return;
     if (strcmp(machine_name, "m3") != 0 && strcmp(machine_name, "m3lp") != 0) return;
 
+    if (dlsym == NULL) return;
     void *fn = dlsym(NULL, "MS_VDEC_Init");
     if (fn == NULL) return;
 

@@ -23,8 +23,9 @@ cmake -B"${BUILD_DIR}" \
     -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DSTEAMVIEW_BUILD_TESTS=OFF \
+    -DCMAKE_C_COMPILER_LAUNCHER="${CMAKE_C_COMPILER_LAUNCHER:-}" \
+    -DCMAKE_CXX_COMPILER_LAUNCHER="${CMAKE_CXX_COMPILER_LAUNCHER:-}" \
     .
-cmake --build "${BUILD_DIR}" -j"$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)"
 
 # Pack the IPK (installs into the staging tree + AresPackage fallback)
 cmake --build "${BUILD_DIR}" --target webos-package

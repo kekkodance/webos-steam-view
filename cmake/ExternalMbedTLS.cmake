@@ -1,7 +1,9 @@
 include(ExternalProject)
 
+# CMP0111 (imported target location): NEW behavior is what we want; the OLD
+# setting only silenced a warning CMake no longer emits.
 if (POLICY CMP0111)
-    cmake_policy(SET CMP0111 OLD)
+    cmake_policy(SET CMP0111 NEW)
 endif ()
 
 set(EXT_MBEDTLS_TOOLCHAIN_ARGS)

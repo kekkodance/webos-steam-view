@@ -64,17 +64,13 @@ if (TARGET_WEBOS)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
     find_package(WebOSUserland)  # provides LGNCOPENAPI (lgncopenapi stubs)
-    find_package(OPUS)
-    if (NOT OPUS_FOUND)
-        include(ExternalOPUS)
-    endif ()
+    set(OPUS_FOUND FALSE)
+    include(ExternalOPUS)
 
     add_executable(steamview ${SOURCES})
     target_include_directories(steamview PRIVATE src src/lgnc/include ${UI_INCLUDE_DIRS})
     target_compile_definitions(steamview PRIVATE APPID="${WEBOS_APPINFO_ID}" TARGET_WEBOS)
-    # The NDK sysroot's static libdl.a is broken (undefined __dlsym); force
-    # the shared libdl so dlsym resolves from libc at runtime.
-    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib lvgl ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} -Wl,-Bdynamic ${CMAKE_DL_LIBS})
+    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib lvgl ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES})
     target_include_directories(steamview SYSTEM PRIVATE ${LGNCOPENAPI_INCLUDE_DIRS} ${OPUS_INCLUDE_DIRS})
     # ext_opus installs headers at build time; the app must wait for them.
     if (TARGET ext_opus)
