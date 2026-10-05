@@ -1,6 +1,6 @@
 --- a/src/video/wayland/SDL_waylandevents.c
 +++ b/src/video/wayland/SDL_waylandevents.c
-@@ -838,7 +838,13 @@ static void pointer_handle_frame(void *data, struct wl_pointer *pointer)
+@@ -838,7 +838,11 @@ static void pointer_handle_frame(void *data, struct wl_pointer *pointer)
      SDL_memset(&input->pointer_curr_axis_info, 0, sizeof(input->pointer_curr_axis_info));
  
      if (x != 0.0f || y != 0.0f) {
