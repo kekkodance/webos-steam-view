@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Steam View <noreply@localhost>
+Date: Mon, 5 Oct 2026 12:00:00 +0200
+Subject: [PATCH 12/12] posix: directed broadcast enumeration via getifaddrs
+
+diff --git a/src/platforms/ihs_udp_posix.c b/src/platforms/ihs_udp_posix.c
+index 91688f2..dbdd0b3 100644
+--- a/src/platforms/ihs_udp_posix.c
++++ b/src/platforms/ihs_udp_posix.c
+@@ -32,6 +32,8 @@
+ 
+ #include <arpa/inet.h>
+ #include <sys/socket.h>
++#include <ifaddrs.h>
++#include <net/if.h>
+ #include <fcntl.h>
+ #include <errno.h>
+ #include <poll.h>
+@@ -151,6 +153,37 @@ bool IHS_UDPSocketSend(IHS_UDPSocket *s, const IHS_UDPPacket *packet) {
+     return ret;
+ }
+ 
++/* Directed broadcasts via getifaddrs: mirrors the Win32 implementation in
++ * ihs_udp_sdl.c. Skips down/loopback/tunnel interfaces; dedups subnets. */
++size_t IHS_UDPBroadcastAddresses(IHS_IPAddress *out, size_t max) {
++    size_t n = 0;
++    struct ifaddrs *addrs = NULL;
++    if (getifaddrs(&addrs) != 0 || addrs == NULL) return 0;
++    for (struct ifaddrs *a = addrs; a != NULL && n < max; a = a->ifa_next) {
++        if (a->ifa_addr == NULL || a->ifa_netmask == NULL) continue;
++        if (!(a->ifa_flags & IFF_UP)) continue;
++        if (a->ifa_flags & IFF_LOOPBACK) continue;
++        if (a->ifa_addr->sa_family != AF_INET) continue;
++        const struct sockaddr_in *sin = (const struct sockaddr_in *) a->ifa_addr;
++        const struct sockaddr_in *mask = (const struct sockaddr_in *) a->ifa_netmask;
++        uint32_t ip = ntohl(sin->sin_addr.s_addr);
++        uint32_t m = ntohl(mask->sin_addr.s_addr);
++        if (m == 0 || m == 0xFFFFFFFFu) continue;
++        uint32_t bcast = htonl(ip | ~m);
++        if (bcast == 0 || bcast == 0xFFFFFFFFu) continue;
++        bool dup = false;
++        for (size_t i = 0; i < n; i++) {
++            if (memcmp(out[i].v4.data, &bcast, 4) == 0) { dup = true; break; }
++        }
++        if (dup) continue;
++        out[n].v4.family = IHS_IPAddressFamilyIPv4;
++        memcpy(out[n].v4.data, &bcast, 4);
++        n++;
++    }
++    freeifaddrs(addrs);
++    return n;
++}
++
+ static void AddressFromSys(IHS_SocketAddress *ihs, const struct sockaddr_storage *sys) {
+     switch (sys->ss_family) {
+         case AF_INET: {
