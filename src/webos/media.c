@@ -124,17 +124,20 @@ bool media_video_open(int width, int height) {
             .vdecFmt = LGNC_VDEC_FMT_H264,
             .trid_type = LGNC_VDEC_3D_TYPE_NONE,
     };
-    if (LGNC_DIRECTVIDEO_Open(&info) != 0) return false;
-    state.video_open = true;
+    int rc = LGNC_DIRECTVIDEO_Open(&info);
+    state.video_open = (rc == 0);
     state.width = width;
     state.height = height;
-    fit_video(width, height);
-    return true;
+    if (rc == 0) fit_video(width, height);
+    return state.video_open;
 }
 
 bool media_video_feed(const uint8_t *au, size_t len) {
     if (!state.video_open || !au) return false;
-    return LGNC_DIRECTVIDEO_Play(au, (unsigned int) len) == 0;
+    extern void osd_trace(const char *fmt, ...);
+    int rc = LGNC_DIRECTVIDEO_Play(au, (unsigned int) len);
+    if (rc != 0) osd_trace("Play FAILED rc=%d len=%u", rc, (unsigned) len);
+    return rc == 0;
 }
 
 void media_video_close(void) {
