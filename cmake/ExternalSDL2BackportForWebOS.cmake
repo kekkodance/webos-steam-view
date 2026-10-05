@@ -45,6 +45,9 @@ ExternalProject_Get_Property(ext_sdl2_backport INSTALL_DIR)
 # Headers land at build time; pre-create the dirs so configure-time IMPORTED
 # checks pass, and order LVGL after the build (add_dependencies in parent).
 file(MAKE_DIRECTORY ${INSTALL_DIR}/include/SDL2 ${INSTALL_DIR}/include)
+
+add_library(ext_sdl2_backport_target SHARED IMPORTED GLOBAL)
+set_target_properties(ext_sdl2_backport_target PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/lib/${LIB_FILENAME})
 target_include_directories(ext_sdl2_backport_target INTERFACE ${INSTALL_DIR}/include/SDL2 ${INSTALL_DIR}/include)
 target_compile_definitions(ext_sdl2_backport_target INTERFACE __WEBOS__)
 add_dependencies(ext_sdl2_backport_target ext_sdl2_backport)
