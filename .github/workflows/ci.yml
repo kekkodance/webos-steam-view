@@ -10,7 +10,7 @@ jobs:
     name: Host build + smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
       - name: Install deps
@@ -34,7 +34,7 @@ jobs:
     name: webOS IPK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
       - name: Install deps
@@ -58,7 +58,7 @@ jobs:
         env:
           TOOLCHAIN_FILE: /tmp/arm-webos-linux-gnueabi_sdk-buildroot/share/buildroot/toolchainfile.cmake
       - name: Upload IPK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: steamview-webos-ipk
           path: dist/*.ipk

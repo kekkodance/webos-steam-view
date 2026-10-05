@@ -1,0 +1,33 @@
+From 4baaf145149e3ed03371075d0f78d13a85a20906 Mon Sep 17 00:00:00 2001
+From: kekko <kekko@local>
+Date: Mon, 5 Oct 2026 02:35:03 +0200
+Subject: [PATCH 10/11] fix 32-bit tv_nsec overflow in packet timestamps
+ (OK-click crash)
+
+---
+ src/session/packet.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/session/packet.c b/src/session/packet.c
+index 1a9a608..331fab2 100644
+--- a/src/session/packet.c
++++ b/src/session/packet.c
+@@ -134,7 +134,11 @@ void IHS_SessionPacketClear(IHS_SessionPacket *packet, bool freeData) {
+ uint32_t IHS_SessionPacketTimestamp() {
+     struct timespec tp;
+     clock_gettime(CLOCK_MONOTONIC, &tp);
+-    uint64_t nsec = tp.tv_nsec * 65536 / 1000000000;
+-    uint32_t sec = tp.tv_sec * 65536;
+-    return sec + nsec;
++    /* Cast before multiply: tv_nsec is long, which is 32-bit on Windows —
++     * tv_nsec * 65536 overflows it (observed: garbage timestamps, and the
++     * faulting OK-click path runs through here). Same class as the
++     * IHS_TimerNow tv_sec fix. */
++    uint64_t nsec = (uint64_t) tp.tv_nsec * 65536 / 1000000000;
++    uint32_t sec = (uint32_t) ((uint64_t) tp.tv_sec * 65536);
++    return sec + (uint32_t) nsec;
+ }
+\ No newline at end of file
+-- 
+2.54.0.windows.1
+

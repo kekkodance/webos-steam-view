@@ -1,0 +1,103 @@
+From bddcad454acd9c04022c3bd11c2d9685c66360ac Mon Sep 17 00:00:00 2001
+From: Simone Caronni <negativo17@gmail.com>
+Date: Sun, 4 Oct 2026 22:02:33 +0200
+Subject: [PATCH 03/11] protobuf: add request_id to
+ CMsgRemoteDeviceAuthorizationRequest
+
+Field 5, as in the current SteamDatabase/Protobufs definition. The
+official Steam Link client sets it.
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+---
+ protobuf/discovery.proto      |  1 +
+ src/protobuf/discovery.pb-c.c | 19 ++++++++++++++++---
+ src/protobuf/discovery.pb-c.h |  4 +++-
+ 3 files changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/protobuf/discovery.proto b/protobuf/discovery.proto
+index eff6833..ac6a901 100644
+--- a/protobuf/discovery.proto
++++ b/protobuf/discovery.proto
+@@ -153,6 +153,7 @@ message CMsgRemoteDeviceAuthorizationRequest {
+ 	optional string device_name = 2;
+ 	required bytes encrypted_request = 3;
+ 	optional bytes auth_key = 4;
++	optional uint32 request_id = 5;
+ }
+ 
+ message CMsgRemoteDeviceAuthorizationCancelRequest {
+diff --git a/src/protobuf/discovery.pb-c.c b/src/protobuf/discovery.pb-c.c
+index 3f56fc2..3adda4e 100644
+--- a/src/protobuf/discovery.pb-c.c
++++ b/src/protobuf/discovery.pb-c.c
+@@ -1427,7 +1427,7 @@ const ProtobufCEnumDescriptor cmsg_remote_device_authorization_request__ekey_esc
+   cmsg_remote_device_authorization_request__ekey_escrow_usage__value_ranges,
+   NULL,NULL,NULL,NULL   /* reserved[1234] */
+ };
+-static const ProtobufCFieldDescriptor cmsg_remote_device_authorization_request__field_descriptors[4] =
++static const ProtobufCFieldDescriptor cmsg_remote_device_authorization_request__field_descriptors[5] =
+ {
+   {
+     "device_token",
+@@ -1477,17 +1477,30 @@ static const ProtobufCFieldDescriptor cmsg_remote_device_authorization_request__
+     0,             /* flags */
+     0,NULL,NULL    /* reserved1,reserved2, etc */
+   },
++  {
++    "request_id",
++    5,
++    PROTOBUF_C_LABEL_OPTIONAL,
++    PROTOBUF_C_TYPE_UINT32,
++    offsetof(CMsgRemoteDeviceAuthorizationRequest, has_request_id),
++    offsetof(CMsgRemoteDeviceAuthorizationRequest, request_id),
++    NULL,
++    NULL,
++    0,             /* flags */
++    0,NULL,NULL    /* reserved1,reserved2, etc */
++  },
+ };
+ static const unsigned cmsg_remote_device_authorization_request__field_indices_by_name[] = {
+   3,   /* field[3] = auth_key */
+   1,   /* field[1] = device_name */
+   0,   /* field[0] = device_token */
+   2,   /* field[2] = encrypted_request */
++  4,   /* field[4] = request_id */
+ };
+ static const ProtobufCIntRange cmsg_remote_device_authorization_request__number_ranges[1 + 1] =
+ {
+   { 1, 0 },
+-  { 0, 4 }
++  { 0, 5 }
+ };
+ const ProtobufCMessageDescriptor cmsg_remote_device_authorization_request__descriptor =
+ {
+@@ -1497,7 +1510,7 @@ const ProtobufCMessageDescriptor cmsg_remote_device_authorization_request__descr
+   "CMsgRemoteDeviceAuthorizationRequest",
+   "",
+   sizeof(CMsgRemoteDeviceAuthorizationRequest),
+-  4,
++  5,
+   cmsg_remote_device_authorization_request__field_descriptors,
+   cmsg_remote_device_authorization_request__field_indices_by_name,
+   1,  cmsg_remote_device_authorization_request__number_ranges,
+diff --git a/src/protobuf/discovery.pb-c.h b/src/protobuf/discovery.pb-c.h
+index 4993d64..582cc37 100644
+--- a/src/protobuf/discovery.pb-c.h
++++ b/src/protobuf/discovery.pb-c.h
+@@ -267,10 +267,12 @@ struct  CMsgRemoteDeviceAuthorizationRequest
+   ProtobufCBinaryData encrypted_request;
+   protobuf_c_boolean has_auth_key;
+   ProtobufCBinaryData auth_key;
++  protobuf_c_boolean has_request_id;
++  uint32_t request_id;
+ };
+ #define CMSG_REMOTE_DEVICE_AUTHORIZATION_REQUEST__INIT \
+  { PROTOBUF_C_MESSAGE_INIT (&cmsg_remote_device_authorization_request__descriptor) \
+-    , {0,NULL}, NULL, {0,NULL}, 0, {0,NULL} }
++    , {0,NULL}, NULL, {0,NULL}, 0, {0,NULL}, 0, 0 }
+ 
+ 
+ struct  CMsgRemoteDeviceAuthorizationCancelRequest
+-- 
+2.54.0.windows.1
+

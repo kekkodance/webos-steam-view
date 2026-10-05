@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # Apply the local fixes to third_party/ihslib (idempotent).
 #
-# Why: the upstream tree needs a handful of portability fixes for our builds:
-#  - MSVC-strict compilers (MinGW gcc 16) reject implicit declarations that
-#    older gcc tolerated: missing <string.h>/<math.h> includes
-#  - the non-Unix SDL_net UDP backend lags the header API
-#  - the SDL HID provider pulls SDL2/ headers we don't lay out locally
+# Two stages:
+#  1. Portability fixups (inline below): the upstream tree needs a handful of
+#     tweaks for our builds:
+#     - MSVC-strict compilers (MinGW gcc 16) reject implicit declarations that
+#       older gcc tolerated: missing <string.h>/<math.h> includes
+#     - the non-Unix SDL_net UDP backend lags the header API
+#     - the SDL HID provider pulls SDL2/ headers we don't lay out locally
+#  2. Our protocol/behavior changes (patches/ihslib/*.patch): PIN-masked key
+#     exchange pairing, per-host secret rotation, discovery improvements, and
+#     crash fixes. Exported from our old local ihslib history with
+#     git format-patch; applied with git apply. Kept as files (not a fork)
+#     so CI works from plain upstream checkout.
 #
 # Keep this script in sync with the CI workflow (it runs there before building).
 set -euo pipefail
@@ -15,6 +22,17 @@ IHS=third_party/ihslib
 if ! [ -d "$IHS" ]; then
     echo "ihslib not checked out; run: git submodule update --init" >&2
     exit 1
+fi
+
+# Stage 2 (git apply; marker file makes reruns a no-op):
+MARKER="$IHS/.steamview-patches-applied"
+if [ -f "$MARKER" ]; then
+    echo "protocol patches already applied, skipping"
+else
+    for p in patches/ihslib/*.patch; do
+        git -C "$IHS" apply "$OLDPWD/$p" && echo "applied: $(basename $p)"
+    done
+    touch "$MARKER"
 fi
 
 python3 - << 'PYEOF'

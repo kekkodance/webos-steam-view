@@ -1,0 +1,636 @@
+From f09c22f22a4a043507a36cdd064ec76ad3f31599 Mon Sep 17 00:00:00 2001
+From: Simone Caronni <negativo17@gmail.com>
+Date: Sun, 4 Oct 2026 22:15:12 +0200
+Subject: [PATCH 05/11] client: pair with the PIN-masked key exchange
+
+Current Steam answers k_ERemoteDeviceAuthorizationFailed once the PIN
+is typed if the request only carries the key escrow ticket. The official
+Steam Link client (1.3.32, the code logging
+"BHandleKeyExchangeAuthorization") also does a key exchange:
+
+- the request sets auth_key = X25519 public key XOR SHA256(PIN), and
+  request_id
+- the host answers Success with its own masked public key and
+  device_token = SymmetricEncrypt(u64le device ID) under
+  secret = SHA256(X25519(private key, peer public key))
+- the device checks that token, sends
+  CMsgRemoteDeviceAuthorizationConfirmed with the result and uses the
+  secret as its secret key for that host from then on
+
+Since the secret key is now per host, add IHS_ClientGetSecretKey and
+IHS_ClientSetSecretKey so applications can store the negotiated key
+after the success callback and restore it before streaming from that
+host. The authorize sample prints it.
+
+Tested against Steam on Linux: the host logs the success and the
+confirmation, and a following streaming request with the negotiated key
+returns a session key that decrypts.
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+---
+ include/ihslib/client.h       |  18 ++++++
+ samples/authorize.c           |  11 +++-
+ src/base.c                    |  24 ++++++-
+ src/base.h                    |   7 +++
+ src/client/CMakeLists.txt     |   1 +
+ src/client/authorization.c    |  62 +++++++++++++++++-
+ src/client/authorization_kx.c |  88 ++++++++++++++++++++++++++
+ src/client/authorization_kx.h |  70 +++++++++++++++++++++
+ src/client/client.c           |   8 +++
+ tests/CMakeLists.txt          |   1 +
+ tests/test_authorization.c    | 115 ++++++++++++++++++++++++++++++++++
+ 11 files changed, 402 insertions(+), 3 deletions(-)
+ create mode 100644 src/client/authorization_kx.c
+ create mode 100644 src/client/authorization_kx.h
+ create mode 100644 tests/test_authorization.c
+
+diff --git a/include/ihslib/client.h b/include/ihslib/client.h
+index 28f353b..9e5b1fc 100644
+--- a/include/ihslib/client.h
++++ b/include/ihslib/client.h
+@@ -97,6 +97,10 @@ typedef struct IHS_ClientDiscoveryCallbacks {
+ typedef struct IHS_ClientAuthorizationCallbacks {
+     void (*progress)(IHS_Client *client, const IHS_HostInfo *host, void *context);
+ 
++    /**
++     * The host accepted the PIN. The client's secret key is now the one negotiated with this host, see
++     * IHS_ClientGetSecretKey.
++     */
+     void (*success)(IHS_Client *client, const IHS_HostInfo *host, uint64_t steamId, void *context);
+ 
+     void (*failed)(IHS_Client *client, const IHS_HostInfo *host, IHS_AuthorizationResult result, void *context);
+@@ -116,6 +120,20 @@ IHS_Client *IHS_ClientCreate(const IHS_ClientConfig *config);
+ 
+ void IHS_ClientSetLogFunction(IHS_Client *client, IHS_LogFunction *logFunction);
+ 
++/**
++ * Get the current 32 byte secret key.
++ *
++ * Steam pairs devices with a key exchange, so the secret key is specific to each host. After a successful
++ * authorization the client switches to the key negotiated with that host: store it, and set it again (here or with
++ * IHS_ClientConfig.secretKey) before requesting streaming from the same host.
++ */
++void IHS_ClientGetSecretKey(IHS_Client *client, uint8_t *secretKey);
++
++/**
++ * Switch to another 32 byte secret key, e.g. the one stored for the host you're about to stream from.
++ */
++void IHS_ClientSetSecretKey(IHS_Client *client, const uint8_t *secretKey);
++
+ void IHS_ClientStop(IHS_Client *client);
+ 
+ void IHS_ClientThreadedJoin(IHS_Client *client);
+diff --git a/samples/authorize.c b/samples/authorize.c
+index 5866dc7..2025ddc 100644
+--- a/samples/authorize.c
++++ b/samples/authorize.c
+@@ -23,6 +23,7 @@
+  *
+  */
+ 
++#include <inttypes.h>
+ #include <stdio.h>
+ #include "common.h"
+ #include "ihslib/client.h"
+@@ -71,7 +72,15 @@ void OnAuthorizationInProgress(IHS_Client *client, const IHS_HostInfo *info, voi
+ }
+ 
+ void OnAuthorizationSuccess(IHS_Client *client, const IHS_HostInfo *info, uint64_t steamId, void *context) {
+-    printf("OnStreamingSuccess(steamId=%llu)\n", steamId);
++    printf("OnAuthorizationSuccess(steamId=%" PRIu64 ")\n", steamId);
++    // The secret key is now the one negotiated with this host, it's needed to stream from it.
++    uint8_t key[32];
++    IHS_ClientGetSecretKey(client, key);
++    printf("Secret key for host %s: ", info->hostname);
++    for (size_t i = 0; i < sizeof(key); i++) {
++        printf("%02x", key[i]);
++    }
++    printf("\n");
+     IHS_ClientStop(client);
+ 
+ }
+diff --git a/src/base.c b/src/base.c
+index 5828c7a..22c0d20 100644
+--- a/src/base.c
++++ b/src/base.c
+@@ -36,6 +36,8 @@
+ 
+ static void BaseWorker(IHS_Base *base);
+ 
++static void BaseUpdateSecretKey(IHS_Base *base, const uint8_t *secretKey);
++
+ static bool initialized;
+ 
+ void IHS_Init() {
+@@ -57,10 +59,30 @@ void IHS_BaseInit(IHS_Base *base, const IHS_ClientConfig *config, IHS_BaseReceiv
+     base->callbacks.received = recvCb;
+ 
+     base->deviceId = config->deviceId;
+-    memcpy(base->secretKey, config->secretKey, 32);
+     strncpy(base->deviceName, config->deviceName ? config->deviceName : "IHSLib", sizeof(base->deviceName) - 1);
+     base->deviceName[sizeof(base->deviceName) - 1] = '\0';
++    BaseUpdateSecretKey(base, config->secretKey);
++}
++
++void IHS_BaseSetSecretKey(IHS_Base *base, const uint8_t *secretKey) {
++    assert(base != NULL);
++    IHS_BaseLock(base);
++    BaseUpdateSecretKey(base, secretKey);
++    IHS_BaseUnlock(base);
++}
+ 
++void IHS_BaseGetSecretKey(IHS_Base *base, uint8_t *secretKey) {
++    assert(base != NULL);
++    IHS_BaseLock(base);
++    memcpy(secretKey, base->secretKey, sizeof(base->secretKey));
++    IHS_BaseUnlock(base);
++}
++
++/**
++ * The device token, SymmetricEncrypt(u64le device ID), is derived from the secret key.
++ */
++static void BaseUpdateSecretKey(IHS_Base *base, const uint8_t *secretKey) {
++    memcpy(base->secretKey, secretKey, sizeof(base->secretKey));
+     uint8_t in[8];
+     size_t deviceTokenLen = sizeof(base->deviceToken);
+     IHS_WriteUInt64LE(in, base->deviceId);
+diff --git a/src/base.h b/src/base.h
+index f43ce87..5991ff5 100644
+--- a/src/base.h
++++ b/src/base.h
+@@ -83,6 +83,13 @@ void IHS_BaseInit(IHS_Base *base, const IHS_ClientConfig *config, IHS_BaseReceiv
+ 
+ void IHS_BaseSetLogFunction(IHS_Base *base, IHS_LogFunction *logFunction);
+ 
++/**
++ * Replace the 32 byte secret key, and the device token derived from it.
++ */
++void IHS_BaseSetSecretKey(IHS_Base *base, const uint8_t *secretKey);
++
++void IHS_BaseGetSecretKey(IHS_Base *base, uint8_t *secretKey);
++
+ void IHS_BaseSetRunCallbacks(IHS_Base *base, const IHS_BaseRunCallbacks *callbacks, void *context);
+ 
+ void IHS_BaseLog(IHS_Base *base, IHS_LogLevel level, const char *tag,
+diff --git a/src/client/CMakeLists.txt b/src/client/CMakeLists.txt
+index 332471e..8ff46e2 100644
+--- a/src/client/CMakeLists.txt
++++ b/src/client/CMakeLists.txt
+@@ -2,4 +2,5 @@ target_sources(ihslib PRIVATE
+         client.c
+         discovery.c
+         authorization.c
++        authorization_kx.c
+         streaming.c)
+\ No newline at end of file
+diff --git a/src/client/authorization.c b/src/client/authorization.c
+index dee51d6..ec74843 100644
+--- a/src/client/authorization.c
++++ b/src/client/authorization.c
+@@ -26,6 +26,7 @@
+ #include "client_pri.h"
+ #include "pubkeys.h"
+ #include "crypto.h"
++#include "authorization_kx.h"
+ 
+ #include <string.h>
+ #include <stdlib.h>
+@@ -35,6 +36,8 @@ typedef struct IHS_AuthorizationState {
+     IHS_HostInfo host;
+     char deviceName[64];
+     char pin[16];
++    uint32_t requestId;
++    IHS_AuthorizationKeyExchange keyExchange;
+ } IHS_AuthorizationState;
+ 
+ static uint64_t AuthorizationRequestTimer(int runCount, void *data);
+@@ -44,15 +47,24 @@ static void AuthorizationRequestCleanup(void *data);
+ static void AuthorizationConfigureTicket(IHS_Client *client, IHS_AuthorizationState *state,
+                                          CMsgRemoteDeviceAuthorizationRequest__CKeyEscrowTicket *ticket);
+ 
++static void AuthorizationKeyExchange(IHS_Client *client, IHS_AuthorizationState *state,
++                                     const CMsgRemoteDeviceAuthorizationResponse *resp);
++
+ bool IHS_ClientAuthorizationRequest(IHS_Client *client, const IHS_HostInfo *host, const char *pin) {
+     if (client->taskHandles.authorization) {
+         return false;
+     }
+-    IHS_AuthorizationState *state = malloc(sizeof(IHS_AuthorizationState));
++    IHS_AuthorizationState *state = calloc(1, sizeof(IHS_AuthorizationState));
+     state->client = client;
+     state->host = *host;
+     strncpy(state->deviceName, client->base.deviceName, sizeof(state->deviceName) - 1);
+     strncpy(state->pin, pin, sizeof(state->pin) - 1);
++    state->requestId = IHS_CryptoRandomUInt32();
++    if (!IHS_AuthorizationKeyExchangeInit(&state->keyExchange, state->pin)) {
++        IHS_AuthorizationKeyExchangeClear(&state->keyExchange);
++        free(state);
++        return false;
++    }
+     IHS_BaseLock(&client->base);
+     client->taskHandles.authorization = IHS_TimerTaskStart(client->base.timers, AuthorizationRequestTimer,
+                                                            AuthorizationRequestCleanup, 0, state);
+@@ -86,6 +98,14 @@ void IHS_ClientAuthorizationCallback(IHS_Client *client, const IHS_SocketAddress
+     }
+     IHS_AuthorizationState *state = IHS_TimerTaskGetContext(task);
+     CMsgRemoteDeviceAuthorizationResponse *resp = (CMsgRemoteDeviceAuthorizationResponse *) message;
++    if (resp == NULL) return;
++    if (resp->has_auth_key) {
++        // Like the official client, a response carrying the host's half of the key exchange is handled as such,
++        // whatever its result says.
++        AuthorizationKeyExchange(client, state, resp);
++        IHS_TimerTaskStop(task);
++        return;
++    }
+     switch (resp->result) {
+         case k_ERemoteDeviceAuthorizationInProgress:
+             if (client->callbacks.authorization && client->callbacks.authorization->progress) {
+@@ -156,10 +176,18 @@ static uint64_t AuthorizationRequestTimer(int runCount, void *data) {
+     IHS_CryptoRSAEncrypt(serTicket, serTicketLen, pubKey, pubKeyLen, encryptedRequest.data,
+                          &encryptedRequest.len);
+ 
++    uint8_t authKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    IHS_AuthorizationKeyExchangeMaskedKey(&state->keyExchange, authKey);
++
+     CMsgRemoteDeviceAuthorizationRequest request = CMSG_REMOTE_DEVICE_AUTHORIZATION_REQUEST__INIT;
+     request.device_name = state->deviceName;
+     request.device_token = deviceToken;
+     request.encrypted_request = encryptedRequest;
++    request.has_auth_key = true;
++    request.auth_key.data = authKey;
++    request.auth_key.len = sizeof(authKey);
++    request.has_request_id = true;
++    request.request_id = state->requestId;
+ 
+     IHS_SocketAddress address = state->host.address;
+     IHS_ClientSend(client, address, k_ERemoteDeviceAuthorizationRequest, (ProtobufCMessage *) &request);
+@@ -185,11 +213,43 @@ static void AuthorizationConfigureTicket(IHS_Client *client, IHS_AuthorizationSt
+     ticket->device_name = client->base.deviceName;
+ }
+ 
++static void AuthorizationKeyExchange(IHS_Client *client, IHS_AuthorizationState *state,
++                                     const CMsgRemoteDeviceAuthorizationResponse *resp) {
++    uint8_t secretKey[IHS_CRYPTO_SHA256_SIZE];
++    bool ok = resp->has_device_token &&
++              IHS_AuthorizationKeyExchangeComplete(&state->keyExchange, resp->auth_key.data, resp->auth_key.len,
++                                                   resp->device_token.data, resp->device_token.len,
++                                                   client->base.deviceId, secretKey);
++
++    CMsgRemoteDeviceAuthorizationConfirmed confirmed = CMSG_REMOTE_DEVICE_AUTHORIZATION_CONFIRMED__INIT;
++    confirmed.result = ok ? k_ERemoteDeviceAuthorizationSuccess : k_ERemoteDeviceAuthorizationDenied;
++    IHS_ClientSend(client, state->host.address, k_ERemoteDeviceAuthorizationConfirmed,
++                   (ProtobufCMessage *) &confirmed);
++
++    if (!ok) {
++        IHS_ClientLog(client, IHS_LogLevelWarn, "Client", "Key exchange with host %s failed (wrong PIN?)",
++                      state->host.hostname);
++        if (client->callbacks.authorization && client->callbacks.authorization->failed) {
++            client->callbacks.authorization->failed(client, &state->host, IHS_AuthorizationDenied,
++                                                    client->callbackContexts.authorization);
++        }
++        return;
++    }
++
++    IHS_BaseSetSecretKey(&client->base, secretKey);
++    memset(secretKey, 0, sizeof(secretKey));
++    if (client->callbacks.authorization && client->callbacks.authorization->success) {
++        client->callbacks.authorization->success(client, &state->host, resp->steamid,
++                                                 client->callbackContexts.authorization);
++    }
++}
++
+ static void AuthorizationRequestCleanup(void *data) {
+     IHS_AuthorizationState *state = data;
+     IHS_Client *client = state->client;
+     IHS_BaseLock(&client->base);
+     client->taskHandles.authorization = NULL;
+     IHS_BaseUnlock(&client->base);
++    IHS_AuthorizationKeyExchangeClear(&state->keyExchange);
+     free(data);
+ }
+\ No newline at end of file
+diff --git a/src/client/authorization_kx.c b/src/client/authorization_kx.c
+new file mode 100644
+index 0000000..a86fef1
+--- /dev/null
++++ b/src/client/authorization_kx.c
+@@ -0,0 +1,88 @@
++/*
++ *  _____  _   _  _____  _  _  _
++ * |_   _|| | | |/  ___|| |(_)| |     Steam
++ *   | |  | |_| |\ `--. | | _ | |__     In-Home
++ *   | |  |  _  | `--. \| || || '_ \      Streaming
++ *  _| |_ | | | |/\__/ /| || || |_) |       Library
++ *  \___/ \_| |_/\____/ |_||_||_.__/
++ *
++ * Copyright (c) 2026 Simone Caronni <https://github.com/scaronni>.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 3 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this program. If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "authorization_kx.h"
++#include "endianness.h"
++
++#include <string.h>
++
++bool IHS_AuthorizationKeyExchangeInit(IHS_AuthorizationKeyExchange *kx, const char *pin) {
++    memset(kx, 0, sizeof(*kx));
++    if (IHS_CryptoRandomBytes(kx->privateKey, sizeof(kx->privateKey)) != 0) {
++        return false;
++    }
++    if (IHS_CryptoX25519PublicKey(kx->privateKey, kx->publicKey) != 0) {
++        return false;
++    }
++    return IHS_CryptoSHA256((const uint8_t *) pin, strlen(pin), kx->pinHash) == 0;
++}
++
++void IHS_AuthorizationKeyExchangeMaskedKey(const IHS_AuthorizationKeyExchange *kx,
++                                           uint8_t out[IHS_CRYPTO_X25519_KEY_SIZE]) {
++    for (size_t i = 0; i < IHS_CRYPTO_X25519_KEY_SIZE; i++) {
++        out[i] = kx->publicKey[i] ^ kx->pinHash[i];
++    }
++}
++
++bool IHS_AuthorizationKeyExchangeComplete(const IHS_AuthorizationKeyExchange *kx,
++                                          const uint8_t *hostAuthKey, size_t hostAuthKeyLen,
++                                          const uint8_t *hostDeviceToken, size_t hostDeviceTokenLen,
++                                          uint64_t deviceId, uint8_t secretKey[IHS_CRYPTO_SHA256_SIZE]) {
++    if (hostAuthKey == NULL || hostAuthKeyLen != IHS_CRYPTO_X25519_KEY_SIZE || hostDeviceToken == NULL) {
++        return false;
++    }
++    uint8_t hostPublicKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    for (size_t i = 0; i < IHS_CRYPTO_X25519_KEY_SIZE; i++) {
++        hostPublicKey[i] = hostAuthKey[i] ^ kx->pinHash[i];
++    }
++    uint8_t secret[IHS_CRYPTO_SHA256_SIZE];
++    if (IHS_CryptoKeyExchange(kx->privateKey, hostPublicKey, secret) != 0) {
++        return false;
++    }
++
++    // The host proves it derived the same secret by encrypting our device ID with it.
++    uint8_t token[64];
++    size_t tokenLen = sizeof(token);
++    bool ok = hostDeviceTokenLen <= sizeof(token) + IHS_CRYPTO_AES_BLOCK_SIZE &&
++              IHS_CryptoSymmetricDecrypt(hostDeviceToken, hostDeviceTokenLen, secret, sizeof(secret), token,
++                                         &tokenLen) == 0;
++    uint64_t tokenDeviceId = 0;
++    if (ok && tokenLen == 8) {
++        IHS_ReadUInt64LE(token, &tokenDeviceId);
++    }
++    ok = ok && tokenLen == 8 && tokenDeviceId == deviceId;
++    if (ok) {
++        memcpy(secretKey, secret, sizeof(secret));
++    }
++    memset(secret, 0, sizeof(secret));
++    return ok;
++}
++
++void IHS_AuthorizationKeyExchangeClear(IHS_AuthorizationKeyExchange *kx) {
++    volatile uint8_t *p = (volatile uint8_t *) kx;
++    for (size_t i = 0; i < sizeof(*kx); i++) {
++        p[i] = 0;
++    }
++}
+diff --git a/src/client/authorization_kx.h b/src/client/authorization_kx.h
+new file mode 100644
+index 0000000..584f8fc
+--- /dev/null
++++ b/src/client/authorization_kx.h
+@@ -0,0 +1,70 @@
++/*
++ *  _____  _   _  _____  _  _  _
++ * |_   _|| | | |/  ___|| |(_)| |     Steam
++ *   | |  | |_| |\ `--. | | _ | |__     In-Home
++ *   | |  |  _  | `--. \| || || '_ \      Streaming
++ *  _| |_ | | | |/\__/ /| || || |_) |       Library
++ *  \___/ \_| |_/\____/ |_||_||_.__/
++ *
++ * Copyright (c) 2026 Simone Caronni <https://github.com/scaronni>.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 3 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this program. If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#pragma once
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#include "crypto.h"
++
++/**
++ * Device side of the PIN-masked key exchange current Steam uses to pair devices, as done by the official Steam Link
++ * client (reversed from Steam Link 1.3.32, the code logging "BHandleKeyExchangeAuthorization").
++ *
++ * The device sends its X25519 public key XOR SHA256(PIN) as auth_key in CMsgRemoteDeviceAuthorizationRequest. Once
++ * the user has typed the PIN, the host answers with its own public key masked the same way, plus device_token =
++ * SymmetricEncrypt(u64le device ID) under secret = SHA256(X25519(private key, peer public key)). The device checks
++ * the token, replies with CMsgRemoteDeviceAuthorizationConfirmed and from then on uses the secret as the secret key
++ * for that host. Hosts no longer complete a pairing with the key escrow ticket alone: they answer Failed.
++ */
++typedef struct IHS_AuthorizationKeyExchange {
++    uint8_t privateKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    uint8_t publicKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    uint8_t pinHash[IHS_CRYPTO_SHA256_SIZE];
++} IHS_AuthorizationKeyExchange;
++
++/**
++ * Generate a key pair for one authorization attempt.
++ */
++bool IHS_AuthorizationKeyExchangeInit(IHS_AuthorizationKeyExchange *kx, const char *pin);
++
++/**
++ * Our public key XOR SHA256(PIN), for CMsgRemoteDeviceAuthorizationRequest.auth_key.
++ */
++void IHS_AuthorizationKeyExchangeMaskedKey(const IHS_AuthorizationKeyExchange *kx,
++                                           uint8_t out[IHS_CRYPTO_X25519_KEY_SIZE]);
++
++/**
++ * Unmask the host's auth_key, derive the shared secret and check the host's device_token decrypts to our device ID.
++ * @return true and the new secret key on success
++ */
++bool IHS_AuthorizationKeyExchangeComplete(const IHS_AuthorizationKeyExchange *kx,
++                                          const uint8_t *hostAuthKey, size_t hostAuthKeyLen,
++                                          const uint8_t *hostDeviceToken, size_t hostDeviceTokenLen,
++                                          uint64_t deviceId, uint8_t secretKey[IHS_CRYPTO_SHA256_SIZE]);
++
++void IHS_AuthorizationKeyExchangeClear(IHS_AuthorizationKeyExchange *kx);
+diff --git a/src/client/client.c b/src/client/client.c
+index b3766b2..cffe82c 100644
+--- a/src/client/client.c
++++ b/src/client/client.c
+@@ -84,6 +84,14 @@ void IHS_ClientSetLogFunction(IHS_Client *client, IHS_LogFunction *logFunction)
+     IHS_BaseSetLogFunction(&client->base, logFunction);
+ }
+ 
++void IHS_ClientGetSecretKey(IHS_Client *client, uint8_t *secretKey) {
++    IHS_BaseGetSecretKey(&client->base, secretKey);
++}
++
++void IHS_ClientSetSecretKey(IHS_Client *client, const uint8_t *secretKey) {
++    IHS_BaseSetSecretKey(&client->base, secretKey);
++}
++
+ void IHS_ClientStop(IHS_Client *client) {
+     IHS_BaseInterruptWorker(&client->base);
+ }
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index dcb292a..3a074a5 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -22,6 +22,7 @@ ihs_add_test(crypto test_crypto.c)
+ ihs_add_test(buffer test_buffer.c)
+ ihs_add_test(queue test_queue.c)
+ ihs_add_test(udp_socket test_udp_socket.c)
++ihs_add_test(authorization test_authorization.c)
+ 
+ add_subdirectory(hid)
+ add_subdirectory(session)
+diff --git a/tests/test_authorization.c b/tests/test_authorization.c
+new file mode 100644
+index 0000000..cc77798
+--- /dev/null
++++ b/tests/test_authorization.c
+@@ -0,0 +1,115 @@
++/*
++ *  _____  _   _  _____  _  _  _
++ * |_   _|| | | |/  ___|| |(_)| |     Steam
++ *   | |  | |_| |\ `--. | | _ | |__     In-Home
++ *   | |  |  _  | `--. \| || || '_ \      Streaming
++ *  _| |_ | | | |/\__/ /| || || |_) |       Library
++ *  \___/ \_| |_/\____/ |_||_||_.__/
++ *
++ * Copyright (c) 2026 Simone Caronni <https://github.com/scaronni>.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 3 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this program. If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include <assert.h>
++#include <stdio.h>
++#include <string.h>
++
++#include "crypto.h"
++#include "endianness.h"
++#include "client/authorization_kx.h"
++
++/**
++ * Plays the host's side: unmask the device key with the PIN typed on the host, answer with our own masked key and
++ * the device ID encrypted with the shared secret.
++ */
++typedef struct FakeHost {
++    uint8_t secret[IHS_CRYPTO_SHA256_SIZE];
++    uint8_t authKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    uint8_t deviceToken[64];
++    size_t deviceTokenLen;
++} FakeHost;
++
++static void FakeHostRespond(FakeHost *host, const uint8_t deviceAuthKey[IHS_CRYPTO_X25519_KEY_SIZE],
++                            const char *pin, uint64_t deviceId) {
++    uint8_t pinHash[IHS_CRYPTO_SHA256_SIZE];
++    assert(IHS_CryptoSHA256((const uint8_t *) pin, strlen(pin), pinHash) == 0);
++
++    uint8_t devicePublicKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    for (size_t i = 0; i < sizeof(devicePublicKey); i++) {
++        devicePublicKey[i] = deviceAuthKey[i] ^ pinHash[i];
++    }
++    uint8_t privateKey[IHS_CRYPTO_X25519_KEY_SIZE], publicKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    assert(IHS_CryptoRandomBytes(privateKey, sizeof(privateKey)) == 0);
++    assert(IHS_CryptoX25519PublicKey(privateKey, publicKey) == 0);
++    assert(IHS_CryptoKeyExchange(privateKey, devicePublicKey, host->secret) == 0);
++    for (size_t i = 0; i < sizeof(publicKey); i++) {
++        host->authKey[i] = publicKey[i] ^ pinHash[i];
++    }
++
++    uint8_t id[8];
++    IHS_WriteUInt64LE(id, deviceId);
++    host->deviceTokenLen = sizeof(host->deviceToken);
++    assert(IHS_CryptoSymmetricEncrypt(id, sizeof(id), host->secret, sizeof(host->secret), host->deviceToken,
++                                      &host->deviceTokenLen) == 0);
++}
++
++static const uint64_t deviceId = 0x1122334455667788ull;
++
++static void test_key_exchange(void) {
++    IHS_AuthorizationKeyExchange kx;
++    assert(IHS_AuthorizationKeyExchangeInit(&kx, "4115"));
++    uint8_t authKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    IHS_AuthorizationKeyExchangeMaskedKey(&kx, authKey);
++    // Nobody without the PIN sees the plain public key.
++    assert(memcmp(authKey, kx.publicKey, sizeof(authKey)) != 0);
++
++    FakeHost host;
++    FakeHostRespond(&host, authKey, "4115", deviceId);
++    uint8_t secretKey[IHS_CRYPTO_SHA256_SIZE];
++    assert(IHS_AuthorizationKeyExchangeComplete(&kx, host.authKey, sizeof(host.authKey), host.deviceToken,
++                                                host.deviceTokenLen, deviceId, secretKey));
++    assert(memcmp(secretKey, host.secret, sizeof(secretKey)) == 0);
++
++    // Token for another device
++    assert(!IHS_AuthorizationKeyExchangeComplete(&kx, host.authKey, sizeof(host.authKey), host.deviceToken,
++                                                 host.deviceTokenLen, deviceId + 1, secretKey));
++    // Truncated key
++    assert(!IHS_AuthorizationKeyExchangeComplete(&kx, host.authKey, sizeof(host.authKey) - 1, host.deviceToken,
++                                                 host.deviceTokenLen, deviceId, secretKey));
++    IHS_AuthorizationKeyExchangeClear(&kx);
++}
++
++static void test_wrong_pin(void) {
++    IHS_AuthorizationKeyExchange kx;
++    assert(IHS_AuthorizationKeyExchangeInit(&kx, "4115"));
++    uint8_t authKey[IHS_CRYPTO_X25519_KEY_SIZE];
++    IHS_AuthorizationKeyExchangeMaskedKey(&kx, authKey);
++
++    // The user typed another PIN on the host: both sides unmask garbage and the secrets differ.
++    FakeHost host;
++    FakeHostRespond(&host, authKey, "4116", deviceId);
++    uint8_t secretKey[IHS_CRYPTO_SHA256_SIZE];
++    assert(!IHS_AuthorizationKeyExchangeComplete(&kx, host.authKey, sizeof(host.authKey), host.deviceToken,
++                                                 host.deviceTokenLen, deviceId, secretKey));
++    IHS_AuthorizationKeyExchangeClear(&kx);
++}
++
++int main(void) {
++    test_key_exchange();
++    test_wrong_pin();
++    printf("authorization tests OK\n");
++    return 0;
++}
+-- 
+2.54.0.windows.1
+

@@ -1,0 +1,28 @@
+From 84b958fe72b80b7f44233ebb3026fc50b76c0a52 Mon Sep 17 00:00:00 2001
+From: Simone Caronni <negativo17@gmail.com>
+Date: Sun, 4 Oct 2026 22:02:23 +0200
+Subject: [PATCH 01/11] video: include math.h for sqrt()
+
+GCC 14 and newer treat implicit function declarations as errors, so the
+build fails on current distributions.
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+---
+ src/session/channels/video/ch_data_video.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/session/channels/video/ch_data_video.c b/src/session/channels/video/ch_data_video.c
+index f8d3baf..69b1c44 100644
+--- a/src/session/channels/video/ch_data_video.c
++++ b/src/session/channels/video/ch_data_video.c
+@@ -23,6 +23,7 @@
+  *
+  */
+ 
++#include <math.h>
+ #include <stdlib.h>
+ 
+ #include "session/channels/ch_data.h"
+-- 
+2.54.0.windows.1
+

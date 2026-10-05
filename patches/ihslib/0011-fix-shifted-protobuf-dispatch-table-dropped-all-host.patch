@@ -1,0 +1,55 @@
+From c5f6a0e54221d05a37a16d5c03e28a48c59cd9e6 Mon Sep 17 00:00:00 2001
+From: kekko <kekko@local>
+Date: Mon, 5 Oct 2026 09:42:05 +0200
+Subject: [PATCH 11/11] fix shifted protobuf dispatch table (dropped all host
+ replies)
+
+---
+ src/client/client.c | 31 ++++++++++++++++++-------------
+ 1 file changed, 18 insertions(+), 13 deletions(-)
+
+diff --git a/src/client/client.c b/src/client/client.c
+index e0677f6..260b759 100644
+--- a/src/client/client.c
++++ b/src/client/client.c
+@@ -46,19 +46,24 @@ static const unsigned char PACKET_MAGIC[8] = {0xff, 0xff, 0xff, 0xff, 0x21, 0x4c
+ static void ClientRecvCallback(IHS_Base *base, const IHS_SocketAddress *address, IHS_Buffer *data);
+ 
+ static const ProtobufCMessageDescriptor *MessageDescriptors[k_ERemoteDeviceStreamingProgress + 1] = {
+-        &cmsg_remote_client_broadcast_discovery__descriptor,
+-        &cmsg_remote_client_broadcast_status__descriptor,
+-        &cmsg_remote_device_authorization_request__descriptor,
+-        &cmsg_remote_device_authorization_response__descriptor,
+-        &cmsg_remote_device_streaming_request__descriptor,
+-        &cmsg_remote_device_streaming_response__descriptor,
+-        &cmsg_remote_device_proof_request__descriptor,
+-        &cmsg_remote_device_proof_response__descriptor,
+-        &cmsg_remote_device_authorization_cancel_request__descriptor,
+-        &cmsg_remote_device_streaming_cancel_request__descriptor,
+-        &cmsg_remote_client_broadcast_client_iddeconflict__descriptor,
+-        &cmsg_remote_device_stream_transport_signal__descriptor,
+-        &cmsg_remote_device_streaming_progress__descriptor,
++        /* Indexed by ERemoteClientBroadcastMsg. Entry 2 (Offline) carries no
++         * payload message, so it stays NULL — but the slot must exist, or
++         * every entry after it decodes with the wrong schema (this silently
++         * dropped all StreamingResponse/AuthResponse packets). */
++        &cmsg_remote_client_broadcast_discovery__descriptor,          /* 0 */
++        &cmsg_remote_client_broadcast_status__descriptor,             /* 1 */
++        NULL,                                                         /* 2 Offline */
++        &cmsg_remote_device_authorization_request__descriptor,        /* 3 */
++        &cmsg_remote_device_authorization_response__descriptor,       /* 4 */
++        &cmsg_remote_device_streaming_request__descriptor,            /* 5 */
++        &cmsg_remote_device_streaming_response__descriptor,           /* 6 */
++        &cmsg_remote_device_proof_request__descriptor,                /* 7 */
++        &cmsg_remote_device_proof_response__descriptor,               /* 8 */
++        &cmsg_remote_device_authorization_cancel_request__descriptor, /* 9 */
++        &cmsg_remote_device_streaming_cancel_request__descriptor,     /* 10 */
++        &cmsg_remote_client_broadcast_client_iddeconflict__descriptor, /* 11 */
++        &cmsg_remote_device_stream_transport_signal__descriptor,      /* 12 */
++        &cmsg_remote_device_streaming_progress__descriptor,           /* 13 */
+ };
+ 
+ static IHS_BaseRunCallbacks ClientRunCallbacks = {
+-- 
+2.54.0.windows.1
+

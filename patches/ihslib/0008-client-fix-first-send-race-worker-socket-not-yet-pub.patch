@@ -1,0 +1,61 @@
+From 4ce91e78e60cae470b50d80a9feab738a42481d1 Mon Sep 17 00:00:00 2001
+From: kekko <kekko@local>
+Date: Mon, 5 Oct 2026 01:37:26 +0200
+Subject: [PATCH 08/11] client: fix first-send race (worker socket not yet
+ published)
+
+---
+ src/base.c             | 14 ++++++++++++++
+ src/client/discovery.c |  4 ++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/src/base.c b/src/base.c
+index 10972bd..9af78e4 100644
+--- a/src/base.c
++++ b/src/base.c
+@@ -31,6 +31,8 @@
+ #include <assert.h>
+ #include <string.h>
+ 
++#include <SDL_timer.h>
++
+ #include "endianness.h"
+ #include "crypto.h"
+ #include "ihs_buffer.h"
+@@ -182,6 +184,18 @@ bool IHS_BaseSend(IHS_Base *base, IHS_SocketAddress address, const IHS_Buffer *d
+     // free the socket out from under us. The worker sets socket = NULL under the same
+     // lock before calling IHS_UDPSocketClose, so any send that completes here uses a
+     // socket the worker has agreed to keep alive.
++    //
++    // The worker creates the socket just after spawning, so an immediate first
++    // send (e.g. a unicast probe right after ClientCreate) can arrive before
++    // it exists. Spin briefly rather than dropping the packet: the worker
++    // only needs milliseconds to publish it.
++    for (int i = 0; i < 100; i++) {
++        IHS_BaseLock(base);
++        IHS_UDPSocket *sock = base->socket;
++        IHS_BaseUnlock(base);
++        if (sock != NULL) break;
++        SDL_Delay(10);
++    }
+     IHS_BaseLock(base);
+     bool ret = false;
+     if (base->socket != NULL) {
+diff --git a/src/client/discovery.c b/src/client/discovery.c
+index 7b9dccc..d0f00aa 100644
+--- a/src/client/discovery.c
++++ b/src/client/discovery.c
+@@ -52,6 +52,10 @@ bool IHS_ClientStartDiscovery(IHS_Client *client, uint32_t interval) {
+     client->discoveryTimer = IHS_TimerTaskStart(client->base.timers, (IHS_TimerRunFunction *) DiscoveryTimerRun,
+                                                 (IHS_TimerEndFunction *) DiscoveryTimerEnd, 0, client);
+     IHS_BaseUnlock(&client->base);
++    /* Fire one probe now instead of waiting a full interval for the timer:
++     * with the worker socket now published before StartDiscovery returns
++     * (BaseSend spin-waits), this send can't miss. */
++    DiscoveryBroadcast(client);
+     return true;
+ }
+ 
+-- 
+2.54.0.windows.1
+

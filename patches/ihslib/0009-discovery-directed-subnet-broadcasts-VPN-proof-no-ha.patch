@@ -1,0 +1,186 @@
+From a0e6782401cd619d99faf6df7472a534c954d711 Mon Sep 17 00:00:00 2001
+From: kekko <kekko@local>
+Date: Mon, 5 Oct 2026 01:52:03 +0200
+Subject: [PATCH 09/11] discovery: directed subnet broadcasts (VPN-proof), no
+ hardcoded IP
+
+---
+ src/client/client.c          | 19 +++++++++--
+ src/ihs_udp.h                | 16 ++++++---
+ src/platforms/CMakeLists.txt |  2 +-
+ src/platforms/ihs_udp_sdl.c  | 65 ++++++++++++++++++++++++++++++++++++
+ 4 files changed, 94 insertions(+), 8 deletions(-)
+
+diff --git a/src/client/client.c b/src/client/client.c
+index 46fa37b..e0677f6 100644
+--- a/src/client/client.c
++++ b/src/client/client.c
+@@ -36,6 +36,7 @@
+ #include "base.h"
+ #include "ihs_buffer.h"
+ #include "ihs_buffer_ext.h"
++#include "ihs_udp.h"
+ #include "protobuf/pb_utils.h"
+ 
+ static void ClientInitialized(IHS_Base *base, void *context);
+@@ -47,7 +48,6 @@ static void ClientRecvCallback(IHS_Base *base, const IHS_SocketAddress *address,
+ static const ProtobufCMessageDescriptor *MessageDescriptors[k_ERemoteDeviceStreamingProgress + 1] = {
+         &cmsg_remote_client_broadcast_discovery__descriptor,
+         &cmsg_remote_client_broadcast_status__descriptor,
+-        NULL,
+         &cmsg_remote_device_authorization_request__descriptor,
+         &cmsg_remote_device_authorization_response__descriptor,
+         &cmsg_remote_device_streaming_request__descriptor,
+@@ -154,13 +154,26 @@ bool IHS_ClientSend(IHS_Client *client, IHS_SocketAddress address, ERemoteClient
+ 
+     bool ret = IHS_BaseSend(&client->base, address, &buf);
+     IHS_BufferClear(&buf, true);
++    if (!ret) {
++        IHS_ClientLog(client, IHS_LogLevelWarn, "Client", "Send failed (type %d)", (int) type);
++    }
+     return ret;
+ }
+ 
+ bool IHS_ClientBroadcast(IHS_Client *client, ERemoteClientBroadcastMsg type,
+                          ProtobufCMessage *message) {
+-    static const IHS_SocketAddress address = {{.v4={IHS_IPAddressFamilyIPv4, {0xFF, 0xFF, 0xFF, 0xFF}}}, 27036};
+-    return IHS_ClientSend(client, address, type, message);
++    IHS_SocketAddress address = {{.v4={IHS_IPAddressFamilyIPv4, {0xFF, 0xFF, 0xFF, 0xFF}}}, 27036};
++    bool sent = IHS_ClientSend(client, address, type, message);
++    /* 255.255.255.255 alone doesn't reach Steam hosts from every device and
++     * network; send to each local subnet's broadcast address as well. Hosts
++     * answer every copy, discovery already handles repeated status. */
++    IHS_IPAddress directed[8];
++    size_t count = IHS_UDPBroadcastAddresses(directed, sizeof(directed) / sizeof(directed[0]));
++    for (size_t i = 0; i < count; i++) {
++        address.ip = directed[i];
++        sent = IHS_ClientSend(client, address, type, message) || sent;
++    }
++    return sent;
+ }
+ 
+ static void ClientRecvCallback(IHS_Base *base, const IHS_SocketAddress *address, IHS_Buffer *data) {
+diff --git a/src/ihs_udp.h b/src/ihs_udp.h
+index c303c0a..ceb6e18 100644
+--- a/src/ihs_udp.h
++++ b/src/ihs_udp.h
+@@ -56,11 +56,19 @@ int IHS_UDPSocketReceive(IHS_UDPSocket *s, IHS_UDPPacket *packet, int timeoutMs)
+  */
+ bool IHS_UDPSocketUnblock(IHS_UDPSocket *s);
+ 
++bool IHS_UDPSocketSend(IHS_UDPSocket *s, const IHS_UDPPacket *packet);
++
++#include <stddef.h>
++
+ /**
++ * Directed broadcast addresses (e.g. 192.168.1.255) of the local IPv4 networks.
+  *
+- * @param s
+- * @param packet
+- * @return true if succeeded
++ * Discovery sent to 255.255.255.255 alone doesn't reach Steam hosts from every device and
++ * network: with a VPN active the limited broadcast dies in the tunnel while the directed
++ * broadcast still routes to the LAN. Matches upstream scaronni/ihslib@4f2b77c (POSIX/Switch
++ * side); this file adds the Windows + SDL backends.
++ *
++ * @return number of addresses written to out
+  */
+-bool IHS_UDPSocketSend(IHS_UDPSocket *s, const IHS_UDPPacket *packet);
++size_t IHS_UDPBroadcastAddresses(IHS_IPAddress *out, size_t max);
+ 
+diff --git a/src/platforms/CMakeLists.txt b/src/platforms/CMakeLists.txt
+index dc9d006..c19be4a 100644
+--- a/src/platforms/CMakeLists.txt
++++ b/src/platforms/CMakeLists.txt
+@@ -15,7 +15,7 @@ if (UNIX)
+ else ()
+     target_sources(ihs-platforms PRIVATE ihs_ip_winsock.c)
+     if (WIN32)
+-        target_link_libraries(ihs-platforms PUBLIC ws2_32)
++        target_link_libraries(ihs-platforms PUBLIC ws2_32 iphlpapi)
+     endif ()
+     if (TARGET SDL2::SDL2net)
+         set(SDL2_NET_LINK SDL2::SDL2net)
+diff --git a/src/platforms/ihs_udp_sdl.c b/src/platforms/ihs_udp_sdl.c
+index 15e0589..9bf3c1a 100644
+--- a/src/platforms/ihs_udp_sdl.c
++++ b/src/platforms/ihs_udp_sdl.c
+@@ -29,6 +29,13 @@
+ #include <SDL_net.h>
+ 
+ #include <stdlib.h>
++#include <string.h>
++#ifdef _WIN32
++/* winsock2 first: iphlpapi needs its types. */
++#include <winsock2.h>
++#include <ws2tcpip.h>
++#include <iphlpapi.h>
++#endif
+ /* Discovery replies can exceed 2048 bytes (hostname, app lists); Steam's
+  * own packet size ceiling is 64KB. A too-small SDL_net packet silently drops
+  * the whole datagram, which looks like 'no host answers'. */
+@@ -155,3 +162,61 @@ bool IHS_UDPSocketSetRecvTimeout(IHS_UDPSocket *s, uint32_t timeoutUs) {
+     (void) s; (void) timeoutUs;
+     return true;
+ }
++
++#ifdef _WIN32
++/* Directed broadcasts via GetAdaptersAddresses: the SDL backend has no
++ * interface enumeration of its own, so ask WinSock directly. Skips the
++ * VPN/tunnel interfaces (their broadcasts go nowhere useful) the same
++ * way the POSIX side skips non-broadcast interfaces. */
++size_t IHS_UDPBroadcastAddresses(IHS_IPAddress *out, size_t max) {
++    size_t n = 0;
++    ULONG bufLen = 16 * 1024;
++    IP_ADAPTER_ADDRESSES *addrs = (IP_ADAPTER_ADDRESSES *) malloc(bufLen);
++    if (addrs == NULL) return 0;
++    /* Retry once on buffer overflow; anything else means give up. */
++    DWORD rc = GetAdaptersAddresses(AF_INET,
++                                    GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, NULL, addrs, &bufLen);
++    if (rc == ERROR_BUFFER_OVERFLOW) {
++        free(addrs);
++        addrs = (IP_ADAPTER_ADDRESSES *) malloc(bufLen);
++        if (addrs == NULL) return 0;
++        rc = GetAdaptersAddresses(AF_INET,
++                                  GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, NULL, addrs, &bufLen);
++    }
++    if (rc == NO_ERROR) {
++        for (IP_ADAPTER_ADDRESSES *a = addrs; a != NULL && n < max; a = a->Next) {
++            if (a->OperStatus != IfOperStatusUp) continue;
++            if (a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
++            if (a->IfType == IF_TYPE_TUNNEL) continue;
++            for (IP_ADAPTER_UNICAST_ADDRESS *u = a->FirstUnicastAddress; u != NULL && n < max;
++                 u = u->Next) {
++                struct sockaddr_in *sin = (struct sockaddr_in *) u->Address.lpSockaddr;
++                if (u->Address.lpSockaddr->sa_family != AF_INET) continue;
++                uint32_t mask;
++                if (u->OnLinkPrefixLength >= 32 || u->OnLinkPrefixLength == 0) continue;
++                /* Host-order arithmetic, then back to network order for the wire. */
++                uint32_t ip = _byteswap_ulong(sin->sin_addr.s_addr);
++                mask = 0xFFFFFFFFu << (32 - u->OnLinkPrefixLength);
++                uint32_t bcast = _byteswap_ulong(ip | ~mask);
++                if (bcast == 0 || bcast == 0xFFFFFFFFu) continue;
++                bool dup = false;
++                for (size_t i = 0; i < n; i++) {
++                    if (memcmp(out[i].v4.data, &bcast, 4) == 0) { dup = true; break; }
++                }
++                if (dup) continue;
++                out[n].v4.family = IHS_IPAddressFamilyIPv4;
++                memcpy(out[n].v4.data, &bcast, 4);
++                n++;
++            }
++        }
++    }
++    free(addrs);
++    return n;
++}
++#else
++size_t IHS_UDPBroadcastAddresses(IHS_IPAddress *out, size_t max) {
++    (void) out;
++    (void) max;
++    return 0;
++}
++#endif
+-- 
+2.54.0.windows.1
+
