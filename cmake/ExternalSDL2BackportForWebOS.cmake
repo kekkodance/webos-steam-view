@@ -32,8 +32,8 @@ ExternalProject_Add(ext_sdl2_backport
         -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
         # The NDK sysroot static libs (libdl.a, libm.a) are broken
         # (unresolvable relocations); force shared objects throughout.
-        -DCMAKE_EXE_LINKER_FLAGS="-l:libdl.so.2 -l:libm.so.6"
-        -DCMAKE_SHARED_LINKER_FLAGS="-l:libdl.so.2 -l:libm.so.6"
+        "-DCMAKE_EXE_LINKER_FLAGS=-l:libdl.so.2 -l:libm.so.6"
+        "-DCMAKE_SHARED_LINKER_FLAGS=-l:libdl.so.2 -l:libm.so.6"
         -DWEBOS=ON -DSDL_OFFSCREEN=OFF -DSDL_DISKAUDIO=OFF
         -DSDL_DUMMYAUDIO=OFF -DSDL_DUMMYVIDEO=OFF -DSDL_KMSDRM=OFF
         -DSDL_VENDOR_INFO=webOS
