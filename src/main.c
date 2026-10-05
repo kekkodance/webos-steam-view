@@ -218,27 +218,43 @@ int main(int argc, char **argv) {
     WSADATA wsa;
 #endif
 
+#ifdef TARGET_WEBOS
+    /* TV has no visible stderr under the app manager: trace startup to a
+     * file so a splash-hang can be located. */
+    FILE *trace = fopen("/tmp/steamview-trace.log", "w");
+#define TRACE(fmt, ...) do { if (trace) { fprintf(trace, fmt "\n", ##__VA_ARGS__); fflush(trace); } } while (0)
+#else
+#define TRACE(fmt, ...) do {} while (0)
+#endif
+
     memset(&app, 0, sizeof(app));
     app.state = APP_STATE_DISCOVERY;
     app.host_selected = -1;
     app.running = true;
     app_set_status(&app, "Starting up...");
+    TRACE("startup");
 
     identity_load();
+    TRACE("identity ok");
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
+        TRACE("SDL_Init FAILED: %s", SDL_GetError());
         return 1;
     }
+    TRACE("sdl ok");
     /* LVGL owns the window from here: lv_sdl_window_create() builds its own
      * SDL window + renderer + framebuffer (software path, no EGL/Wayland).
      * The old fixed-size window + bitmap render() is retired. */
     extern void ui_port_init(int width, int height);
     extern void ui_port_set_title(const char *title);
     ui_init();
+    TRACE("lvgl init ok");
     ui_port_init(1280, 720);
+    TRACE("ui_port ok");
     ui_port_set_title("Steam View");
     IHS_Init();
+    TRACE("ihs init ok");
 
     app.client = IHS_ClientCreate(identity_client_config());
     IHS_ClientSetLogFunction(app.client, ihs_log);
