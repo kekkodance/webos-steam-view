@@ -56,7 +56,17 @@ static void video_watchdog_handler(int sig) {
 }
 
 void video_watchdog_start(void) {
-    signal(SIGALRM, video_watchdog_handler);
+    /* The app manager spawns us with signals blocked; unmask ALRM or the
+     * watchdog never fires. */
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGALRM);
+    sigprocmask(SIG_UNBLOCK, &set, NULL);
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = video_watchdog_handler;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGALRM, &sa, NULL);
     alarm(3);
 }
 
