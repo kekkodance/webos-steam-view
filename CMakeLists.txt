@@ -46,8 +46,12 @@ endif ()
 find_package(SDL2 REQUIRED)
 # (FindSDL2 also creates SDL2::SDL2net from third_party/SDL_net when present)
 add_subdirectory(third_party/lvgl)
+# LVGL's SDL driver includes <SDL.h>: the backport headers must exist before
+# its objects compile (cross-build fetch ordering).
+if (TARGET ext_sdl2_backport)
+    add_dependencies(lvgl ext_sdl2_backport)
+endif ()
 target_link_libraries(lvgl PUBLIC SDL2::SDL2)
-set(UI_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/ui ${CMAKE_SOURCE_DIR}/third_party/lvgl)
 
 # ---- ihslib (Steam In-Home Streaming protocol) ----
 # Resolve deps first so their variables are visible at this scope

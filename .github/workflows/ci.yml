@@ -28,7 +28,11 @@ jobs:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
         run: |
-          timeout 5 build-host/steamview; rc=$?; [ $rc -eq 124 ] || [ $rc -eq 0 ]
+          # timeout 124 = still alive after 5s = success. Anything else is real.
+          set +e
+          timeout 5 build-host/steamview
+          rc=$?
+          test $rc -eq 124
 
   webos:
     name: webOS IPK

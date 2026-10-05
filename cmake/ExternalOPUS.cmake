@@ -24,7 +24,7 @@ if (CMAKE_TOOLCHAIN_ARGS)
     list(APPEND EXT_OPUS_TOOLCHAIN_ARGS "-DCMAKE_TOOLCHAIN_ARGS:string=${CMAKE_TOOLCHAIN_ARGS}")
 endif ()
 
-set(LIB_FILENAME "${CMAKE_SHARED_LIBRARY_PREFIX}opus${CMAKE_SHARED_LIBRARY_SUFFIX}")
+set(LIB_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}opus${CMAKE_STATIC_LIBRARY_SUFFIX}")
 
 ExternalProject_Add(ext_opus
         URL https://downloads.xiph.org/releases/opus/opus-1.4.tar.gz
@@ -33,15 +33,15 @@ ExternalProject_Add(ext_opus
         -DCMAKE_BUILD_TYPE:string=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-        -DOPUS_BUILD_SHARED_LIBRARY=ON
+        -DOPUS_BUILD_SHARED_LIBRARY=OFF
+        -DOPUS_BUILD_STATIC_LIBRARY=ON
         -DOPUS_DISABLE_INTRINSICS=${OPUS_DISABLE_INTRINSICS}
-        -DOPUS_INSTALL_PKG_CONFIG_MODULE=OFF
         -DOPUS_INSTALL_CMAKE_CONFIG_MODULE=OFF
         BUILD_BYPRODUCTS <INSTALL_DIR>/lib/${LIB_FILENAME}
         )
 ExternalProject_Get_Property(ext_opus INSTALL_DIR)
 
-add_library(ext_opus_target SHARED IMPORTED)
+add_library(ext_opus_target STATIC IMPORTED)
 set_target_properties(ext_opus_target PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/lib/${LIB_FILENAME})
 
 add_dependencies(ext_opus_target ext_opus)
