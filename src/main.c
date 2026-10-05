@@ -98,6 +98,17 @@ void video_log_to_trace(void) {
  * SDL's hang. RTLD_GLOBAL so SDL's later dlopen reuses the handles. */
 #include <dlfcn.h>
 void video_probe_dlopen(void) {
+    static const char *envs[] = {
+        "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
+        "SDL_VIDEODRIVER", "APPID", "HOME", NULL,
+    };
+    for (int i = 0; envs[i] != NULL; i++) {
+        const char *v = getenv(envs[i]);
+        if (trace_fp != NULL) {
+            fprintf(trace_fp, "[env] %s=%s\n", envs[i], v ? v : "(unset)");
+            fflush(trace_fp);
+        }
+    }
     static const char *libs[] = {
         "libhelpers.so.2",
         "libpbnjson_c.so.2",
