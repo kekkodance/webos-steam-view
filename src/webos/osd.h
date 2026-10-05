@@ -11,4 +11,7 @@ void osd_show(const char *title, const char **lines, int nlines, int selected);
 /* Push the current framebuffer to the LGNC plane. */
 void osd_present(void);
 
+/* Diagnostic trace (appends to the trace log on TV). */
+void osd_trace(const char *fmt, ...);
+
 #endif

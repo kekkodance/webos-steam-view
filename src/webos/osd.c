@@ -12,6 +12,24 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
+void osd_trace(const char *fmt, ...) {
+#ifdef TARGET_WEBOS
+    FILE *f = fopen("/tmp/steamview-trace.log", "a");
+    if (f != NULL) {
+        va_list ap;
+        va_start(ap, fmt);
+        fprintf(f, "osd: ");
+        vfprintf(f, fmt, ap);
+        fprintf(f, "\n");
+        va_end(ap);
+        fclose(f);
+    }
+#else
+    (void) fmt;
+#endif
+}
 
 void osd_show(const char *title, const char **lines, int nlines, int selected) {
     osd_fb_show(title, lines, nlines, selected);
@@ -46,11 +64,11 @@ static bool osd_encoder_init(void) {
 }
 
 void osd_present(void) {
-    if (!osd_encoder_init()) return;
-    if (!media_video_open(OSD_W, OSD_H)) return;
+    if (!osd_encoder_init()) { osd_trace("encoder init FAILED"); return; }
+    if (!media_video_open(OSD_W, OSD_H)) { osd_trace("video open FAILED"); return; }
     const uint8_t *y, *u, *v;
     osd_fb_planes(&y, &u, &v);
-    if (y == NULL || u == NULL || v == NULL) return;
+    if (y == NULL || u == NULL || v == NULL) { osd_trace("null planes"); return; }
     SSourcePicture pic;
     memset(&pic, 0, sizeof(pic));
     pic.iPicWidth = OSD_W;
@@ -67,8 +85,9 @@ void osd_present(void) {
     if (frame_no % 30 == 0) {
         (*encoder)->ForceIntraFrame(encoder, true);
     }
-    if ((*encoder)->EncodeFrame(encoder, &pic, &info) != cmResultSuccess) return;
+    if ((*encoder)->EncodeFrame(encoder, &pic, &info) != cmResultSuccess) { osd_trace("encode FAILED"); return; }
     frame_no++;
+    osd_trace("encoded frame %d size %d layers %d", frame_no, info.iFrameSizeInBytes, info.iLayerNum);
     /* Concatenate NALs with Annex B start codes into one AU. OpenH264
      * emits raw concatenated NALs (pNalLengthInByte[j] is the LENGTH of
      * NAL j, not its offset); the LGNC decoder needs start codes. */
