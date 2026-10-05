@@ -26,7 +26,7 @@ ExternalProject_Add(ext_openh264
         URL "${CMAKE_SOURCE_DIR}/third_party/openh264-2.4.1.tar.gz"
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         CONFIGURE_COMMAND meson setup <BINARY_DIR> <SOURCE_DIR>
-            --prefix=<INSTALL_DIR> --buildtype=${_oh_buildtype}
+            --prefix=<INSTALL_DIR> --libdir=lib --buildtype=${_oh_buildtype}
             --default-library=static ${_oh_cross}
         BUILD_COMMAND ninja -C <BINARY_DIR>
         INSTALL_COMMAND ninja -C <BINARY_DIR> install
@@ -34,12 +34,9 @@ ExternalProject_Add(ext_openh264
         INSTALL_DIR "${_install_dir}"
         )
 
-# Meson installs to lib/<multiarch> on Debian-likes; find the real archive.
-file(GLOB_RECURSE _oh_lib "${INSTALL_DIR}/lib*/libopenh264.a")
-list(GET _oh_lib 0 OPENH264_ARCHIVE)
-
+# --libdir=lib above keeps the archive at a fixed path (no multiarch dir).
 add_library(ext_openh264_target STATIC IMPORTED)
-set_target_properties(ext_openh264_target PROPERTIES IMPORTED_LOCATION "${OPENH264_ARCHIVE}")
+set_target_properties(ext_openh264_target PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/lib/${LIB_FILENAME})
 add_dependencies(ext_openh264_target ext_openh264)
 
 set(OPENH264_INCLUDE_DIRS ${INSTALL_DIR}/include)
