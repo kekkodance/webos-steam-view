@@ -62,7 +62,7 @@ if (TARGET_WEBOS)
     add_executable(steamview ${SOURCES})
     target_include_directories(steamview PRIVATE src src/lgnc/include)
     target_compile_definitions(steamview PRIVATE APPID="${WEBOS_APPINFO_ID}" TARGET_WEBOS)
-    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} ${OPENH264_LIBRARIES} -l:libdl.so.2 -l:libpthread.so.0 -l:librt.so.1 -static-libstdc++ -static-libgcc stdc++)
+    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} ${OPENH264_LIBRARIES} -l:libdl.so.2 -l:libpthread.so.0 -l:librt.so.1 -static-libstdc++ -static-libgcc)
     target_include_directories(steamview SYSTEM PRIVATE ${LGNCOPENAPI_INCLUDE_DIRS} ${OPUS_INCLUDE_DIRS} ${OPENH264_INCLUDE_DIRS})
     # ext_opus installs headers at build time; the app must wait for them.
     if (TARGET ext_opus)
