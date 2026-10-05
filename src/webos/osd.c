@@ -27,7 +27,7 @@ static int frame_no = 0;
 static bool osd_encoder_init(void) {
     if (encoder != NULL) return true;
     if (WelsCreateSVCEncoder(&encoder) != 0 || encoder == NULL) return false;
-    SEncParamBase param;
+    SEncParamExt param;
     memset(&param, 0, sizeof(param));
     param.iUsageType = CAMERA_VIDEO_REAL_TIME;
     param.iPicWidth = OSD_W;
@@ -39,13 +39,9 @@ static bool osd_encoder_init(void) {
     param.iTemporalLayerNum = 1;
     param.iSpatialLayerNum = 1;
     param.eSpsPpsIdStrategy = CONSTANT_ID;
-    param.bEnableDenoise = false;
-    param.bEnableBackgroundDetection = false;
-    param.bEnableAdaptiveQuant = false;
     param.bEnableFrameSkip = true;
-    param.iMultipleThreadIdc = 1;
-    param.iLoopFilterDisableIdc = 0;
-    if ((*encoder)->Initialize(encoder, &param) != cmResultSuccess) return false;
+    param.iEntropyCodingModeFlag = 0;
+    if ((*encoder)->InitializeExt(encoder, &param) != cmResultSuccess) return false;
     return true;
 }
 
