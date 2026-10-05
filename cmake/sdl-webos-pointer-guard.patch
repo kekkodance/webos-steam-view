@@ -1,0 +1,15 @@
+--- a/src/video/wayland/SDL_waylandevents.c
++++ b/src/video/wayland/SDL_waylandevents.c
+@@ -838,7 +838,13 @@ static void pointer_handle_frame(void *data, struct wl_pointer *pointer)
+     SDL_memset(&input->pointer_curr_axis_info, 0, sizeof(input->pointer_curr_axis_info));
+ 
+     if (x != 0.0f || y != 0.0f) {
+-        SDL_SendMouseWheel(window->sdlwindow, mouse_id, x, y, SDL_MOUSEWHEEL_NORMAL);
++        /* webOS 2 compositor sends pointer frames with no focused window
++         * (pointer_focus NULL); SDL_SendMouseWheel derefs it -> SIGABRT.
++         * Drop unfocused wheel frames instead of crashing. */
++        if (window != NULL && window->sdlwindow != NULL) {
++            SDL_SendMouseWheel(window->sdlwindow, mouse_id, x, y, SDL_MOUSEWHEEL_NORMAL);
++        }
+     }
+ }
