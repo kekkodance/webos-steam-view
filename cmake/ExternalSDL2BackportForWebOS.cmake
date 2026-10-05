@@ -30,10 +30,10 @@ ExternalProject_Add(ext_sdl2_backport
         CMAKE_ARGS ${EXT_SDL2_TOOLCHAIN_ARGS}
         -DCMAKE_BUILD_TYPE:string=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
-        # The NDK sysroot static libdl.a is broken (undefined __dlsym);
-        # force the shared object for SDL's own dlopen use and detection.
-        -DCMAKE_EXE_LINKER_FLAGS="-l:libdl.so.2"
-        -DCMAKE_SHARED_LINKER_FLAGS="-l:libdl.so.2"
+        # The NDK sysroot static libs (libdl.a, libm.a) are broken
+        # (unresolvable relocations); force shared objects throughout.
+        -DCMAKE_EXE_LINKER_FLAGS="-l:libdl.so.2 -l:libm.so.6"
+        -DCMAKE_SHARED_LINKER_FLAGS="-l:libdl.so.2 -l:libm.so.6"
         -DWEBOS=ON -DSDL_OFFSCREEN=OFF -DSDL_DISKAUDIO=OFF
         -DSDL_DUMMYAUDIO=OFF -DSDL_DUMMYVIDEO=OFF -DSDL_KMSDRM=OFF
         -DSDL_VENDOR_INFO=webOS
