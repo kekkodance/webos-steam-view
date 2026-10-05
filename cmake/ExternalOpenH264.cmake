@@ -10,10 +10,11 @@ set(LIB_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}openh264${CMAKE_STATIC_LIBRARY_S
 set(_install_dir "${CMAKE_BINARY_DIR}/openh264-install")
 
 string(TOLOWER "${CMAKE_BUILD_TYPE}" _oh_buildtype)
-if (_oh_buildtype STREQUAL "")
+if (_oh_buildtype STREQUAL "relwithdebinfo")
+    set(_oh_buildtype "debugoptimized")
+elseif (_oh_buildtype STREQUAL "")
     set(_oh_buildtype "release")
 endif ()
-
 # Meson cross file for webOS (native build needs none).
 set(_oh_cross "")
 if (CMAKE_TOOLCHAIN_FILE)
