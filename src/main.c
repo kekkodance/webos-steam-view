@@ -50,6 +50,7 @@ static void on_signal(int sig) {
  * stack. alarm() needs no SDL thread subsystem. See main() usage. */
 #include <unistd.h>
 static volatile bool video_done_flag = false;
+static FILE *trace_fp = NULL;
 static void video_watchdog_handler(int sig) {
     (void) sig;
     if (!video_done_flag) abort();
@@ -73,6 +74,25 @@ void video_watchdog_start(void) {
 static void video_watchdog_stop(void) {
     alarm(0);
     video_done_flag = true;
+}
+
+/* TEMP-DIAG: SDL + Wayland debug straight into the trace file. */
+static void sdl_log_cb(void *userdata, int category, SDL_LogPriority priority,
+                       const char *message) {
+    (void) userdata;
+    (void) category;
+    (void) priority;
+    if (trace_fp != NULL) {
+        fprintf(trace_fp, "[sdl] %s\n", message);
+        fflush(trace_fp);
+    }
+}
+
+void video_log_to_trace(void) {
+    trace_fp = fopen("/tmp/steamview-trace.log", "a");
+    SDL_LogSetOutputFunction(sdl_log_cb, NULL);
+    SDL_LogSetAllPriority(SDL_LOG_PRIORITY_VERBOSE);
+    setenv("WAYLAND_DEBUG", "1", 1);
 }
 #endif
 
@@ -302,10 +322,12 @@ int main(int argc, char **argv) {
     }
     TRACE("sdl events ok");
 #ifdef TARGET_WEBOS
-    /* TEMP-DIAG: if video init hangs, abort after 8s so the core shows
-     * exactly where. Remove once the hang is understood. */
+    /* TEMP-DIAG: route SDL + Wayland debug into the trace file, then arm
+     * the hang watchdog. WAYLAND_DEBUG shows the compositor conversation. */
     extern void video_watchdog_start(void);
     extern void video_watchdog_stop(void);
+    extern void video_log_to_trace(void);
+    video_log_to_trace();
     video_watchdog_start();
 #endif
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
