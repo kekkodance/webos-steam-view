@@ -47,16 +47,22 @@ static void on_signal(int sig) {
 
 #ifdef TARGET_WEBOS
 /* TEMP-DIAG watchdog: abort mid-hang so the core captures the video-init
- * stack. See main() usage. */
-static int video_watchdog_fn(void *arg) {
-    volatile bool *done = arg;
-    SDL_Delay(8000);
-    if (!*done) abort();
-    return 0;
+ * stack. alarm() needs no SDL thread subsystem. See main() usage. */
+#include <unistd.h>
+static volatile bool video_done_flag = false;
+static void video_watchdog_handler(int sig) {
+    (void) sig;
+    if (!video_done_flag) abort();
 }
 
-void video_watchdog_start(volatile bool *done_flag) {
-    SDL_CreateThread(video_watchdog_fn, "vidwatch", (void *) done_flag);
+void video_watchdog_start(void) {
+    signal(SIGALRM, video_watchdog_handler);
+    alarm(8);
+}
+
+static void video_watchdog_stop(void) {
+    alarm(0);
+    video_done_flag = true;
 }
 #endif
 
@@ -282,9 +288,9 @@ int main(int argc, char **argv) {
 #ifdef TARGET_WEBOS
     /* TEMP-DIAG: if video init hangs, abort after 8s so the core shows
      * exactly where. Remove once the hang is understood. */
-    extern void video_watchdog_start(volatile bool *done_flag);
-    static volatile bool video_done = false;
-    video_watchdog_start(&video_done);
+    extern void video_watchdog_start(void);
+    extern void video_watchdog_stop(void);
+    video_watchdog_start();
 #endif
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL video: %s\n", SDL_GetError());
@@ -292,7 +298,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 #ifdef TARGET_WEBOS
-    video_done = true;
+    video_watchdog_stop();
 #endif
     TRACE("sdl ok");
     /* LVGL owns the window from here: lv_sdl_window_create() builds its own
