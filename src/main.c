@@ -87,12 +87,37 @@ static void sdl_log_cb(void *userdata, int category, SDL_LogPriority priority,
         fflush(trace_fp);
     }
 }
-
 void video_log_to_trace(void) {
     trace_fp = fopen("/tmp/steamview-trace.log", "a");
     SDL_LogSetOutputFunction(sdl_log_cb, NULL);
     SDL_LogSetAllPriority(SDL_LOG_PRIORITY_VERBOSE);
     setenv("WAYLAND_DEBUG", "1", 1);
+}
+
+/* TEMP-DIAG: dlopen each lib SDL will load, tracing each. The hung one is
+ * SDL's hang. RTLD_GLOBAL so SDL's later dlopen reuses the handles. */
+#include <dlfcn.h>
+void video_probe_dlopen(void) {
+    static const char *libs[] = {
+        "libhelpers.so.2",
+        "libpbnjson_c.so.2",
+        "libwayland-client.so.0",
+        "libwayland-egl.so",
+        "libwayland-cursor.so.0",
+        "libxkbcommon.so.0",
+        NULL,
+    };
+    for (int i = 0; libs[i] != NULL; i++) {
+        if (trace_fp != NULL) {
+            fprintf(trace_fp, "[probe] dlopen %s\n", libs[i]);
+            fflush(trace_fp);
+        }
+        dlopen(libs[i], RTLD_NOW | RTLD_GLOBAL);
+        if (trace_fp != NULL) {
+            fprintf(trace_fp, "[probe] opened %s\n", libs[i]);
+            fflush(trace_fp);
+        }
+    }
 }
 #endif
 
@@ -328,6 +353,10 @@ int main(int argc, char **argv) {
     extern void video_watchdog_stop(void);
     extern void video_log_to_trace(void);
     video_log_to_trace();
+    /* TEMP-DIAG: dlopen each lib SDL will load, one per trace line, to find
+     * the one whose constructor hangs. */
+    extern void video_probe_dlopen(void);
+    video_probe_dlopen();
     video_watchdog_start();
 #endif
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
