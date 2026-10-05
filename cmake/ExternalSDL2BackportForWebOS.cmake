@@ -30,14 +30,16 @@ ExternalProject_Add(ext_sdl2_backport
         CMAKE_ARGS ${EXT_SDL2_TOOLCHAIN_ARGS}
         -DCMAKE_BUILD_TYPE:string=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+        # The NDK sysroot static libdl.a is broken (undefined __dlsym);
+        # force the shared object for SDL's own dlopen use and detection.
+        -DCMAKE_EXE_LINKER_FLAGS="-l:libdl.so.2"
+        -DCMAKE_SHARED_LINKER_FLAGS="-l:libdl.so.2"
         -DWEBOS=ON -DSDL_OFFSCREEN=OFF -DSDL_DISKAUDIO=OFF
         -DSDL_DUMMYAUDIO=OFF -DSDL_DUMMYVIDEO=OFF -DSDL_KMSDRM=OFF
         -DSDL_VENDOR_INFO=webOS
         BUILD_BYPRODUCTS <INSTALL_DIR>/lib/${LIB_FILENAME}
         INSTALL_DIR "${_install_dir}"
         )
-ExternalProject_Get_Property(ext_sdl2_backport INSTALL_DIR)
-
 # Headers only exist after the build; pre-create the dirs so configure-time
 # IMPORTED checks pass, and order LVGL after the download.
 file(MAKE_DIRECTORY ${INSTALL_DIR}/include/SDL2 ${INSTALL_DIR}/include)
