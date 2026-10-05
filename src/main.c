@@ -57,7 +57,7 @@ static void video_watchdog_handler(int sig) {
 
 void video_watchdog_start(void) {
     signal(SIGALRM, video_watchdog_handler);
-    alarm(8);
+    alarm(3);
 }
 
 static void video_watchdog_stop(void) {
