@@ -103,7 +103,42 @@ void video_log_to_trace(void) {
 #include <errno.h>
 #endif
 void video_probe_dlopen(void) {
-    /* TEMP-DIAG: can we even open the compositor socket ourselves? */
+    /* TEMP-DIAG: replicate SDL's Wayland steps manually, tracing each. */
+    void *wl = dlopen("libwayland-client.so.0", RTLD_NOW | RTLD_GLOBAL);
+    if (trace_fp != NULL) {
+        fprintf(trace_fp, "[wl] lib handle=%p\n", wl);
+        fflush(trace_fp);
+    }
+    if (wl == NULL) return;
+    struct wl_display *(*p_connect)(const char *) = dlsym(wl, "wl_display_connect");
+    int (*p_roundtrip)(struct wl_display *) = dlsym(wl, "wl_display_roundtrip");
+    struct wl_registry *(*p_get_reg)(struct wl_display *) = dlsym(wl, "wl_display_get_registry");
+    if (trace_fp != NULL) {
+        fprintf(trace_fp, "[wl] syms connect=%p roundtrip=%p registry=%p\n",
+                (void *) p_connect, (void *) p_roundtrip, (void *) p_get_reg);
+        fflush(trace_fp);
+    }
+    if (p_connect == NULL) return;
+    struct wl_display *disp = p_connect(NULL);
+    if (trace_fp != NULL) {
+        fprintf(trace_fp, "[wl] connect -> %p\n", (void *) disp);
+        fflush(trace_fp);
+    }
+    if (disp == NULL) return;
+    if (p_get_reg != NULL) {
+        void *reg = p_get_reg(disp);
+        if (trace_fp != NULL) {
+            fprintf(trace_fp, "[wl] registry -> %p\n", reg);
+            fflush(trace_fp);
+        }
+    }
+    if (p_roundtrip != NULL) {
+        int rc = p_roundtrip(disp);
+        if (trace_fp != NULL) {
+            fprintf(trace_fp, "[wl] roundtrip -> %d\n", rc);
+            fflush(trace_fp);
+        }
+    }
     {
         int fd = socket(AF_UNIX, SOCK_STREAM, 0);
         struct sockaddr_un addr;
