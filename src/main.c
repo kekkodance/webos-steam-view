@@ -5,7 +5,9 @@
  */
 #include "app.h"
 #include "media.h"
+#ifndef TARGET_WEBOS
 #include "ui/ui.h"
+#endif
 
 #include <ihslib.h>
 #include <SDL.h>
@@ -46,183 +48,9 @@ static void on_signal(int sig) {
 }
 
 #ifdef TARGET_WEBOS
-/* TEMP-DIAG watchdog: abort mid-hang so the core captures the video-init
- * stack. alarm() needs no SDL thread subsystem. See main() usage. */
-#include <unistd.h>
-static volatile bool video_done_flag = false;
+/* No on-TV UI: the trace file doubles as the status display. PIN and state
+ * go here; read with: cat /tmp/steamview-trace.log */
 static FILE *trace_fp = NULL;
-static void video_watchdog_handler(int sig) {
-    (void) sig;
-    if (!video_done_flag) abort();
-}
-
-void video_watchdog_start(void) {
-    /* The app manager spawns us with signals blocked; unmask ALRM or the
-     * watchdog never fires. */
-    sigset_t set;
-    sigemptyset(&set);
-    sigaddset(&set, SIGALRM);
-    sigprocmask(SIG_UNBLOCK, &set, NULL);
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = video_watchdog_handler;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGALRM, &sa, NULL);
-    alarm(3);
-}
-
-static void video_watchdog_stop(void) {
-    alarm(0);
-    video_done_flag = true;
-}
-
-/* TEMP-DIAG: SDL + Wayland debug straight into the trace file. */
-static void sdl_log_cb(void *userdata, int category, SDL_LogPriority priority,
-                       const char *message) {
-    (void) userdata;
-    (void) category;
-    (void) priority;
-    if (trace_fp != NULL) {
-        fprintf(trace_fp, "[sdl] %s\n", message);
-        fflush(trace_fp);
-    }
-}
-void video_log_to_trace(void) {
-    trace_fp = fopen("/tmp/steamview-trace.log", "a");
-    SDL_LogSetOutputFunction(sdl_log_cb, NULL);
-    SDL_LogSetAllPriority(SDL_LOG_PRIORITY_VERBOSE);
-    setenv("WAYLAND_DEBUG", "1", 1);
-}
-
-/* TEMP-DIAG: dlopen each lib SDL will load, tracing each. The hung one is
- * SDL's hang. RTLD_GLOBAL so SDL's later dlopen reuses the handles. */
-#include <dlfcn.h>
-#ifndef _WIN32
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <errno.h>
-#endif
-#ifdef TARGET_WEBOS
-/* TEMP-DIAG registry callbacks (file scope, no trampolines). */
-static void wl_reg_global(void *data, void *reg, unsigned int name,
-                          const char *iface, unsigned int ver) {
-    (void) data;
-    (void) reg;
-    extern FILE *trace_fp;
-    if (trace_fp != NULL) {
-        extern FILE *trace_fp;
-        fprintf(trace_fp, "[wl] global %u %s v%u\n", name, iface, ver);
-        fflush(trace_fp);
-    }
-}
-
-static void wl_reg_remove(void *data, void *reg, unsigned int name) {
-    (void) data;
-    (void) reg;
-    (void) name;
-}
-
-const void *wl_reg_listener_tbl[2] = {(const void *) wl_reg_global,
-                                       (const void *) wl_reg_remove};
-#endif
-
-void video_probe_dlopen(void) {
-    /* TEMP-DIAG: replicate SDL's Wayland steps manually, tracing each. */
-    void *wl = dlopen("libwayland-client.so.0", RTLD_NOW | RTLD_GLOBAL);
-    if (trace_fp != NULL) {
-        fprintf(trace_fp, "[wl] lib handle=%p\n", wl);
-        fflush(trace_fp);
-    }
-    if (wl == NULL) return;
-    struct wl_display *(*p_connect)(const char *) = dlsym(wl, "wl_display_connect");
-    int (*p_roundtrip)(struct wl_display *) = dlsym(wl, "wl_display_roundtrip");
-    struct wl_registry *(*p_get_reg)(struct wl_display *) = dlsym(wl, "wl_display_get_registry");
-    if (trace_fp != NULL) {
-        fprintf(trace_fp, "[wl] syms connect=%p roundtrip=%p registry=%p\n",
-                (void *) p_connect, (void *) p_roundtrip, (void *) p_get_reg);
-        fflush(trace_fp);
-    }
-    if (p_connect == NULL) return;
-    struct wl_display *disp = p_connect(NULL);
-    if (trace_fp != NULL) {
-        fprintf(trace_fp, "[wl] connect -> %p\n", (void *) disp);
-        fflush(trace_fp);
-    }
-    if (disp == NULL) return;
-    if (p_get_reg != NULL) {
-        void *reg = p_get_reg(disp);
-        if (trace_fp != NULL) {
-            fprintf(trace_fp, "[wl] registry -> %p\n", reg);
-            fflush(trace_fp);
-        }
-    }
-    if (p_roundtrip != NULL) {
-        int rc = p_roundtrip(disp);
-        if (trace_fp != NULL) {
-            fprintf(trace_fp, "[wl] roundtrip -> %d\n", rc);
-            fflush(trace_fp);
-        }
-    }
-    /* TEMP-DIAG: add a registry listener and roundtrip again, listing
-     * globals. If the compositor sends nothing, SDL's output scan hangs
-     * on empty display data. Callbacks are file-scope (no trampolines). */
-    {
-        int (*p_add_listener)(void *, const void *, void *) =
-            dlsym(wl, "wl_proxy_add_listener");
-        extern const void *wl_reg_listener_tbl[2];
-        if (trace_fp != NULL) {
-            fprintf(trace_fp, "[wl] table=%p add_listener=%p\n",
-                    (const void *) wl_reg_listener_tbl, (void *) p_add_listener);
-            fflush(trace_fp);
-        }
-    }
-    {
-        int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-        struct sockaddr_un addr;
-        memset(&addr, 0, sizeof(addr));
-        addr.sun_family = AF_UNIX;
-        snprintf(addr.sun_path, sizeof(addr.sun_path), "%s/wayland-0",
-                 getenv("XDG_RUNTIME_DIR") ? getenv("XDG_RUNTIME_DIR") : "/tmp");
-        int rc = connect(fd, (struct sockaddr *) &addr, sizeof(addr));
-        if (trace_fp != NULL) {
-            fprintf(trace_fp, "[probe] connect %s -> fd=%d rc=%d errno=%d\n",
-                    addr.sun_path, fd, rc, rc ? errno : 0);
-            fflush(trace_fp);
-        }
-        if (fd >= 0) close(fd);
-    }
-    static const char *envs[] = {
-        "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE",
-        "SDL_VIDEODRIVER", "APPID", "HOME", NULL,
-    };
-    for (int i = 0; envs[i] != NULL; i++) {
-        const char *v = getenv(envs[i]);
-        if (trace_fp != NULL) {
-            fprintf(trace_fp, "[env] %s=%s\n", envs[i], v ? v : "(unset)");
-            fflush(trace_fp);
-        }
-    }
-    static const char *libs[] = {
-        "libhelpers.so.2",
-        "libpbnjson_c.so.2",
-        "libwayland-client.so.0",
-        "libwayland-egl.so",
-        "libwayland-cursor.so.0",
-        "libxkbcommon.so.0",
-        NULL,
-    };
-    for (int i = 0; libs[i] != NULL; i++) {
-        if (trace_fp != NULL) {
-            fprintf(trace_fp, "[probe] dlopen %s\n", libs[i]);
-            fflush(trace_fp);
-        }
-        dlopen(libs[i], RTLD_NOW | RTLD_GLOBAL);
-        if (trace_fp != NULL) {
-            fprintf(trace_fp, "[probe] opened %s\n", libs[i]);
-            fflush(trace_fp);
-        }
-    }
-}
 #endif
 
 static App app;
@@ -357,11 +185,30 @@ void app_request_rediscover(App *a) {
     a->rediscover = true;
 }
 
-/* Last UI screen pushed; ui_show rebuilds on transitions only. Live values
- * (PIN digits, frame stats) update in place via ui_set_*. */
+/* TV has no UI: log state changes to trace/console, auto-pick the first
+ * host and auto-request the stream. PIN goes to the trace log. */
 static int g_ui_screen = -1;
 
 static void ui_sync(AppState state) {
+#ifdef TARGET_WEBOS
+    if ((int) state != g_ui_screen) {
+        g_ui_screen = (int) state;
+        TRACE("state=%d hosts=%d pin=%s", (int) state, app.host_count,
+              app.pin_len > 0 ? app.pin : "-");
+        printf("state=%d hosts=%d pin=%s status=%s\n", (int) state,
+               app.host_count, app.pin_len > 0 ? app.pin : "-",
+               app.status);
+        fflush(stdout);
+    }
+    /* first host seen: pick it and go */
+    if ((state == APP_STATE_DISCOVERY || state == APP_STATE_HOST_PICK) &&
+        app.host_count > 0 && app.host_selected < 0) {
+        app.host_selected = 0;
+        app.state = APP_STATE_HOST_PICK;
+        TRACE("auto-pick host 0: %s", app.hosts[0].name);
+        app_request_stream(&app);
+    }
+#else
     int want = -1;
     switch (state) {
         case APP_STATE_DISCOVERY:
@@ -389,6 +236,7 @@ static void ui_sync(AppState state) {
     }
     if (want == UI_PAIRING) ui_set_pin(app.pin);
     if (want == UI_STREAMING) ui_set_stats(app.width, app.height, app.frames, app.audio_frames);
+#endif
 }
 
 int main(int argc, char **argv) {
@@ -418,67 +266,22 @@ int main(int argc, char **argv) {
     TRACE("identity ok");
 
 #ifdef TARGET_WEBOS
-    /* Moonlight-tv order: LGNC/NDL media first, SDL video after. The Wayland
-     * display init hangs/aborts on webOS 2 if the media layer is not up. */
+    /* Media first (LGNC plane for video). No SDL video init on webOS: the
+     * backport Wayland init hangs on old compositors. SDL events (remote
+     * keys) work without video. No on-TV UI: status goes to the trace log
+     * and stdout; the PIN is read from /tmp/steamview-trace.log. */
     if (!media_init()) {
         TRACE("media_init FAILED");
     }
     TRACE("media ok");
-    /* TEMP-DIAG: pre-open the video plane too, mimicking an app with an
-     * active video surface, before SDL touches Wayland. */
-    extern bool media_video_open(int width, int height);
-    if (!media_video_open(1280, 720)) {
-        TRACE("video pre-open FAILED");
-    }
-    TRACE("video pre-open ok");
 #endif
-    /* Split init, mirroring moonlight-tv: bare init first (lets the backport
-     * settle + hints register), video subsystem after. Single-shot
-     * SDL_Init(VIDEO|EVENTS) hangs inside Wayland setup on webOS 2. */
-    if (SDL_Init(0) != 0) {
+    if (SDL_Init(SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
-        TRACE("SDL_Init(0) FAILED: %s", SDL_GetError());
-        return 1;
-    }
-    TRACE("sdl base ok");
-#ifdef TARGET_WEBOS
-    /* Full moonlight-tv hint set: cursor + key policies + bluetooth ignore.
-     * The backport negotiates these with the compositor during video init. */
-    SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_BACK", "true");
-    SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_EXIT", "true");
-    SDL_SetHint("SDL_WEBOS_CURSOR_SLEEP_TIME", "5000");
-    SDL_SetHint("SDL_WEBOS_CURSOR_FREQUENCY", "60");
-    SDL_SetHint("SDL_WEBOS_CURSOR_CALIBRATION_DISABLE", "true");
-    SDL_SetHint("SDL_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES", "0x057e/0x0000");
-#endif
-    if (SDL_InitSubSystem(SDL_INIT_EVENTS) != 0) {
-        fprintf(stderr, "SDL events: %s\n", SDL_GetError());
-        TRACE("SDL events FAILED: %s", SDL_GetError());
+        TRACE("SDL_Init FAILED: %s", SDL_GetError());
         return 1;
     }
     TRACE("sdl events ok");
-#ifdef TARGET_WEBOS
-    /* TEMP-DIAG: route SDL + Wayland debug into the trace file, then arm
-     * the hang watchdog. WAYLAND_DEBUG shows the compositor conversation. */
-    extern void video_watchdog_start(void);
-    extern void video_watchdog_stop(void);
-    extern void video_log_to_trace(void);
-    video_log_to_trace();
-    /* TEMP-DIAG: dlopen each lib SDL will load, one per trace line, to find
-     * the one whose constructor hangs. */
-    extern void video_probe_dlopen(void);
-    video_probe_dlopen();
-    video_watchdog_start();
-#endif
-    if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "SDL video: %s\n", SDL_GetError());
-        TRACE("SDL video FAILED: %s", SDL_GetError());
-        return 1;
-    }
-#ifdef TARGET_WEBOS
-    video_watchdog_stop();
-#endif
-    TRACE("sdl ok");
+#ifndef TARGET_WEBOS
     /* LVGL owns the window from here: lv_sdl_window_create() builds its own
      * SDL window + renderer + framebuffer (software path, no EGL/Wayland).
      * The old fixed-size window + bitmap render() is retired. */
@@ -489,6 +292,7 @@ int main(int argc, char **argv) {
     ui_port_init(1280, 720);
     TRACE("ui_port ok");
     ui_port_set_title("Steam View");
+#endif
     IHS_Init();
     TRACE("ihs init ok");
 
@@ -568,6 +372,7 @@ int main(int argc, char **argv) {
          * Console prints on status change only  -  the old per-tick print
          * spammed "1 host found" every 50ms. */
         ui_sync(app.state);
+#ifndef TARGET_WEBOS
         static char last_console[192] = {0};
         if (strcmp(app.status, last_console) != 0) {
             snprintf(last_console, sizeof(last_console), "%s", app.status);
@@ -575,9 +380,9 @@ int main(int argc, char **argv) {
             fflush(stdout);
         }
         ui_tick(50);
+#endif
         SDL_Delay(50);
     }
-
     if (app.session != NULL) {
         IHS_SessionDisconnect(app.session);
         IHS_SessionThreadedJoin(app.session);

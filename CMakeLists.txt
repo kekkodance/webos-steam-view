@@ -12,47 +12,53 @@ endif ()
 set(SOURCES
         src/ihs_glue.c
         src/font5x7.c
-        src/main.c
-        src/ui/ui.c
-        src/ui/ui_port.c
-        assets/fonts/motiva_20.c
-        assets/fonts/motiva_28.c
-        assets/fonts/motiva_40.c
-        assets/fonts/motiva_medium_28.c
-        assets/fonts/motiva_bold_28.c
-        assets/fonts/motiva_pin_96.c)
+        src/main.c)
 
 if (TARGET_WEBOS)
+    # TV: no SDL, no LVGL. Headless: discovery + PIN + LGNC stream.
+    # Remote keys come from SDL events (system SDL, events-only init).
     list(APPEND SOURCES src/webos/media.c)
 else ()
-    list(APPEND SOURCES tests/host_stubs.c)
+    # Host: full pretty UI for development.
+    list(APPEND SOURCES
+            src/ui/ui.c
+            src/ui/ui_port.c
+            assets/fonts/motiva_20.c
+            assets/fonts/motiva_28.c
+            assets/fonts/motiva_40.c
+            assets/fonts/motiva_medium_28.c
+            assets/fonts/motiva_bold_28.c
+            assets/fonts/motiva_pin_96.c
+            tests/host_stubs.c)
 endif ()
 
-# ---- LVGL v9 (Steam-TV UI; software render, no EGL/Wayland) ----
-# lv_conf.h lives in src/ui; LV_CONF_INCLUDE_SIMPLE picks it up.
-set(LV_CONF_INCLUDE_SIMPLE ON CACHE BOOL "" FORCE)
-set(LV_CONF_DIR ${CMAKE_SOURCE_DIR}/src/ui CACHE PATH "" FORCE)
-set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
-set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
+if (NOT TARGET_WEBOS)
+    # ---- LVGL v9 (host UI only; the TV runs headless) ----
+    # lv_conf.h lives in src/ui; LV_CONF_INCLUDE_SIMPLE picks it up.
+    set(LV_CONF_INCLUDE_SIMPLE ON CACHE BOOL "" FORCE)
+    set(LV_CONF_DIR ${CMAKE_SOURCE_DIR}/src/ui CACHE PATH "" FORCE)
+    set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
+    set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
+    set(UI_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/ui ${CMAKE_SOURCE_DIR}/third_party/lvgl)
+endif ()
+
 if (TARGET_WEBOS)
-    # SDL2 backport for webOS, built from source (branch tip tracks the
-    # compositor better than the prebuilt tarball);
-    # must resolve before find_package(SDL2) so it takes precedence.
-    # It also must come before add_subdirectory(lvgl): LVGL's SDL driver
-    # needs SDL2::SDL2's includes on its own compile lines.
+    # TV SDL: source-built backport, but events-subsystem only. Video init
+    # is never called (its Wayland init hangs on old compositors). Remote
+    # keys arrive as SDL_KEYDOWN with events-only init.
     set(SDL2_BACKPORT_REVISION "webOS-2.30.x")
     include(ExternalSDL2BackportForWebOS)
 endif ()
 
-find_package(SDL2 REQUIRED)
-# (FindSDL2 also creates SDL2::SDL2net from third_party/SDL_net when present)
-# EXCLUDE_FROM_ALL: LVGL's install rules target an absolute prefix that
-# breaks CPack staging (non-root). We link it statically; nothing of LVGL's
-# belongs in the IPK.
-add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
-# Source-built SDL: headers land at build time, so order LVGL after them.
-add_dependencies(lvgl ext_sdl2_backport)
-target_link_libraries(lvgl PUBLIC SDL2::SDL2)
+if (NOT TARGET_WEBOS)
+    find_package(SDL2 REQUIRED)
+    # (FindSDL2 also creates SDL2::SDL2net from third_party/SDL_net when present)
+    # EXCLUDE_FROM_ALL: LVGL's install rules target an absolute prefix that
+    # breaks CPack staging (non-root). We link it statically; nothing of LVGL's
+    # belongs in the IPK.
+    add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
+    target_link_libraries(lvgl PUBLIC SDL2::SDL2)
+endif ()
 # ---- ihslib (Steam In-Home Streaming protocol) ----
 # Resolve deps first so their variables are visible at this scope
 find_package(MbedTLS)
@@ -73,11 +79,9 @@ if (TARGET_WEBOS)
     include(ExternalOPUS)
 
     add_executable(steamview ${SOURCES})
-    target_include_directories(steamview PRIVATE src src/lgnc/include ${UI_INCLUDE_DIRS})
+    target_include_directories(steamview PRIVATE src src/lgnc/include)
     target_compile_definitions(steamview PRIVATE APPID="${WEBOS_APPINFO_ID}" TARGET_WEBOS)
-    # dlopen probe needs libdl; the sysroot static libdl.a is broken
-    # (undefined __dlsym), so select the shared object explicitly.
-    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib lvgl ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} -l:libdl.so.2)
+    target_link_libraries(steamview PRIVATE SDL2::SDL2 ihslib ${LGNCOPENAPI_LIBRARIES} ${OPUS_LIBRARIES} -l:libdl.so.2)
     target_include_directories(steamview SYSTEM PRIVATE ${LGNCOPENAPI_INCLUDE_DIRS} ${OPUS_INCLUDE_DIRS})
     # ext_opus installs headers at build time; the app must wait for them.
     if (TARGET ext_opus)
