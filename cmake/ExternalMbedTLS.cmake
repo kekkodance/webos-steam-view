@@ -88,4 +88,6 @@ endif ()
 
 install(DIRECTORY ${INSTALL_DIR}/lib/ DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-set(MBEDCRYPTO_RUNTIME "${INSTALL_DIR}/bin/${CMAKE_SHARED_LIBRARY_PREFIX}mbedcrypto${CMAKE_SHARED_LIBRARY_SUFFIX}" CACHE STRING "" FORCE)
+# Cross builds link the .so from lib/ (no bin/ layout there); the IPK ships
+# the same file. Point at lib/, not bin/.
+set(MBEDCRYPTO_RUNTIME "${INSTALL_DIR}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}mbedcrypto${CMAKE_SHARED_LIBRARY_SUFFIX}" CACHE STRING "" FORCE)

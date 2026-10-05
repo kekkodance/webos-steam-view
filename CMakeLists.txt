@@ -45,9 +45,11 @@ endif ()
 
 find_package(SDL2 REQUIRED)
 # (FindSDL2 also creates SDL2::SDL2net from third_party/SDL_net when present)
-add_subdirectory(third_party/lvgl)
+# EXCLUDE_FROM_ALL: LVGL's install rules target an absolute prefix that
+# breaks CPack staging (non-root). We link it statically; nothing of LVGL's
+# belongs in the IPK.
+add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
 target_link_libraries(lvgl PUBLIC SDL2::SDL2)
-
 # ---- ihslib (Steam In-Home Streaming protocol) ----
 # Resolve deps first so their variables are visible at this scope
 find_package(MbedTLS)
