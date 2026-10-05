@@ -69,11 +69,33 @@ void osd_present(void) {
     }
     if ((*encoder)->EncodeFrame(encoder, &pic, &info) != cmResultSuccess) return;
     frame_no++;
+    /* Concatenate NALs with Annex B start codes into one AU. OpenH264
+     * emits raw concatenated NALs (pNalLengthInByte[j] is the LENGTH of
+     * NAL j, not its offset); the LGNC decoder needs start codes. */
+    static const uint8_t sc[4] = {0, 0, 0, 1};
+    size_t total = 0;
     for (int i = 0; i < info.iLayerNum; i++) {
         const SLayerBSInfo *layer = &info.sLayerInfo[i];
         for (int j = 0; j < layer->iNalCount; j++) {
-            media_video_feed(layer->pBsBuf + layer->pNalLengthInByte[j],
-                             layer->pNalLengthInByte[j]);
+            total += 4 + (size_t) layer->pNalLengthInByte[j];
         }
     }
+    if (total == 0) return;
+    uint8_t *au = malloc(total);
+    if (au == NULL) return;
+    uint8_t *p = au;
+    for (int i = 0; i < info.iLayerNum; i++) {
+        const SLayerBSInfo *layer = &info.sLayerInfo[i];
+        const uint8_t *src = layer->pBsBuf;
+        for (int j = 0; j < layer->iNalCount; j++) {
+            int len = layer->pNalLengthInByte[j];
+            memcpy(p, sc, 4);
+            p += 4;
+            memcpy(p, src, (size_t) len);
+            p += len;
+            src += len;
+        }
+    }
+    media_video_feed(au, total);
+    free(au);
 }
