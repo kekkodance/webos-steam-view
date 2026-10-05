@@ -45,7 +45,20 @@ static void on_signal(int sig) {
     g_running = 0;
 }
 
-static App app;
+#ifdef TARGET_WEBOS
+/* TEMP-DIAG watchdog: abort mid-hang so the core captures the video-init
+ * stack. See main() usage. */
+static int video_watchdog_fn(void *arg) {
+    volatile bool *done = arg;
+    SDL_Delay(8000);
+    if (!*done) abort();
+    return 0;
+}
+
+void video_watchdog_start(volatile bool *done_flag) {
+    SDL_CreateThread(video_watchdog_fn, "vidwatch", (void *) done_flag);
+}
+#endif
 
 void app_set_status(App *a, const char *fmt, ...) {
     va_list ap;
@@ -264,11 +277,21 @@ int main(int argc, char **argv) {
         return 1;
     }
     TRACE("sdl events ok");
+#ifdef TARGET_WEBOS
+    /* TEMP-DIAG: if video init hangs, abort after 8s so the core shows
+     * exactly where. Remove once the hang is understood. */
+    extern void video_watchdog_start(volatile bool *done_flag);
+    static volatile bool video_done = false;
+    video_watchdog_start(&video_done);
+#endif
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL video: %s\n", SDL_GetError());
         TRACE("SDL video FAILED: %s", SDL_GetError());
         return 1;
     }
+#ifdef TARGET_WEBOS
+    video_done = true;
+#endif
     TRACE("sdl ok");
     /* LVGL owns the window from here: lv_sdl_window_create() builds its own
      * SDL window + renderer + framebuffer (software path, no EGL/Wayland).
