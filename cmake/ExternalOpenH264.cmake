@@ -33,11 +33,13 @@ ExternalProject_Add(ext_openh264
         BUILD_BYPRODUCTS <INSTALL_DIR>/lib/${LIB_FILENAME}
         INSTALL_DIR "${_install_dir}"
         )
-ExternalProject_Get_Property(ext_openh264 INSTALL_DIR)
+
+# Meson installs to lib/<multiarch> on Debian-likes; find the real archive.
+file(GLOB_RECURSE _oh_lib "${INSTALL_DIR}/lib*/libopenh264.a")
+list(GET _oh_lib 0 OPENH264_ARCHIVE)
 
 add_library(ext_openh264_target STATIC IMPORTED)
-set_target_properties(ext_openh264_target PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/lib/${LIB_FILENAME})
-
+set_target_properties(ext_openh264_target PROPERTIES IMPORTED_LOCATION "${OPENH264_ARCHIVE}")
 add_dependencies(ext_openh264_target ext_openh264)
 
 set(OPENH264_INCLUDE_DIRS ${INSTALL_DIR}/include)
