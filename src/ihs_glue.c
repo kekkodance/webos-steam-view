@@ -95,6 +95,14 @@ static IHS_StreamVideoSubmitResult on_video_submit(IHS_Session *session, IHS_Buf
     if (app->state != APP_STATE_STREAMING) {
         return IHS_StreamVideoSubmitReportLost;
     }
+    const uint8_t *payload = IHS_BufferPointer(data);
+    size_t len = data->size;
+    if (!media_video_feed(payload, len)) {
+        /* Decode hiccup: report lost so ihslib drops state and waits for a
+         * keyframe (SubmitFrame handles the reset). Error would kill the
+         * whole session, which is wrong for a transient decoder failure. */
+        return IHS_StreamVideoSubmitReportLost;
+    }
     app->frames++;
     if (flags & IHS_StreamVideoFrameKeyFrame) app->keyframes++;
     return IHS_StreamVideoSubmitOK;
