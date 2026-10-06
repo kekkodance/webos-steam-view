@@ -335,7 +335,11 @@ int main(int argc, char **argv) {
 #ifdef TARGET_WEBOS
                 osd_trace("key sym=%d scancode=%d", (int) k, (int) ev.key.keysym.scancode);
 #endif
-                if (k == SDLK_ESCAPE || k == SDLK_AC_BACK) {
+                /* Back: the fork reports scancode 482 (sym 1073742306),
+                 * not the standard SDL_SCANCODE_AC_BACK (270) the
+                 * SDLK_AC_BACK macro uses. Accept both. */
+                if (k == SDLK_ESCAPE || k == SDLK_AC_BACK ||
+                    ev.key.keysym.scancode == 482) {
                     if (app.state == APP_STATE_STREAMING && app.session != NULL) {
                         app_teardown_session();
                         app_rediscover();
