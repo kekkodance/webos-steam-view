@@ -161,6 +161,9 @@ static void app_teardown_session(void) {
     IHS_SessionThreadedJoin(app.session);
     IHS_SessionDestroy(app.session);
     app.session = NULL;
+    /* Flush the decoder: queued stream frames would otherwise linger
+     * into the reopened menu plane (top-edge remnant). */
+    media_video_close();
 }
 
 /* Rebuild the client worker (gone since the stream started) and restart
