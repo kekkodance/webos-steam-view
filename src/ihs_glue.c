@@ -128,23 +128,11 @@ static int on_video_capture_size(IHS_Session *session, int width, int height, vo
 static int on_audio_start(IHS_Session *session, const IHS_StreamAudioConfig *config, void *context) {
     (void) session;
     (void) context;
-#ifdef TARGET_WEBOS
-    osd_trace("audio start codec=%d freq=%u ch=%u", (int) config->codec,
-              (unsigned) config->frequency, (unsigned) config->channels);
-#endif
-    if (config->codec != IHS_StreamAudioCodecOpus && config->codec != IHS_StreamAudioCodecRaw) {
-#ifdef TARGET_WEBOS
-        osd_trace("audio REJECTED codec %d", (int) config->codec);
-#endif
-        return -1;
-    }
-    if (!media_audio_open_pcm((int) config->frequency, (int) config->channels)) {
-#ifdef TARGET_WEBOS
-        osd_trace("audio open FAILED");
-#endif
-        return -1;
-    }
-    return 0;
+    /* Audio disabled: the LGNC DirectAudio path on this TV produces
+     * delayed garbage regardless of decode/chunk/pacing fixes. Revisit
+     * with a capture of the raw Opus bytes if ever needed. */
+    (void) config;
+    return -1;
 }
 static int on_audio_submit(IHS_Session *session, IHS_Buffer *data, void *context) {
     App *app = context;
