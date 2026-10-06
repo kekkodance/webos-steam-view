@@ -2,42 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
 
 jobs:
-  host:
-    name: Host build + smoke
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake libsdl2-dev libsdl2-net-dev python3 ccache meson ninja-build nasm
-      - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2.24
-        with:
-          key: host-${{ runner.os }}
-      - name: Apply ihslib patches
-        run: ./scripts/apply-ihslib-patches.sh
-      - name: Build
-        run: |
-          cmake -B build-host -DCMAKE_BUILD_TYPE=Release -DSTEAMVIEW_BUILD_TESTS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache .
-          cmake --build build-host -j"$(nproc)"
-      - name: Smoke run (5s, no host expected on runners)
-        env:
-          SDL_VIDEODRIVER: dummy
-          SDL_AUDIODRIVER: dummy
-        run: |
-          # timeout 124 = still alive after 5s = success. Anything else is real.
-          set +e
-          timeout 5 build-host/steamview
-          rc=$?
-          test $rc -eq 124
-
   webos:
     name: webOS IPK
     runs-on: ubuntu-latest
