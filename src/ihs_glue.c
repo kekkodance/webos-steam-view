@@ -181,7 +181,9 @@ static void app_host_info(App *app, IHS_HostInfo *info) {
     snprintf(info->hostname, sizeof(info->hostname), "%s", h->name);
 }
 
-/* Request a stream from the selected host. View-only: no input channel. */
+/* Request a stream from the selected host. Input channel enabled but never
+ * fed: Steam needs it (heartbeats) to sustain data flow; view-only clients
+ * that disable it starve after the grace period. */
 void app_request_stream(App *app) {
     if (app->host_selected < 0 || app->host_selected >= app->host_count) return;
     /* Already paired (key persisted): reclaim the negotiated secret first  - 
@@ -194,7 +196,7 @@ void app_request_stream(App *app) {
     app_set_status(app, "Requesting stream from %s...", info.hostname);
     IHS_StreamingRequest req = {
             .maxResolution = {1920, 1080},
-            .streamingEnable = {true, true, false},
+            .streamingEnable = {true, true, true},
             .audioChannelCount = 2,
     };
     IHS_ClientStreamingRequest(app->client, &info, &req);

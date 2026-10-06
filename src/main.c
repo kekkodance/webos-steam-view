@@ -386,7 +386,7 @@ int main(int argc, char **argv) {
             snprintf(info.hostname, sizeof(info.hostname), "%s", h->name);
             IHS_StreamingRequest req = {
                     .maxResolution = {1920, 1080},
-                    .streamingEnable = {true, true, false},
+                    .streamingEnable = {true, true, true},
                     .audioChannelCount = 2,
             };
             if (IHS_ClientStreamingRequest(app.client, &info, &req)) {
