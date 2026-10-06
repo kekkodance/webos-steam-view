@@ -93,11 +93,14 @@ bool media_init(void) {
     LGNC_CALLBACKS_T callbacks = {.msgHandler = NULL};
     if (LGNC_PLUGIN_Initialize(&callbacks) != 0) return false;
     LGNC_PLUGIN_SetAppId(APPID);
+    /* Reset VDEC state left by the previous app: without this the first
+     * plane open displays stale decoder buffers (top-half launch glitch). */
+    LGNC_DIRECTVIDEO_Close();
+    LGNC_DIRECTAUDIO_Close();
     m3_kadp_fix();
     state.plugin_ready = true;
     return true;
 }
-
 /* Fit an arbitrary aspect ratio into the 1920x1080 display window. */
 static void fit_video(int width, int height) {
     int scaled_height = 1920 * height / width;
@@ -123,6 +126,10 @@ bool media_video_open(int width, int height) {
     if (state.video_open) {
         LGNC_DIRECTVIDEO_Close();
         state.video_open = false;
+        /* Close is async in the VDEC driver: reopening immediately races
+         * the teardown and decodes against half-dead state (top-half
+         * garbage on stream/menu switches). Let it settle. */
+        usleep(200000);
     }
     LGNC_VDEC_DATA_INFO_T info = {
             .width = width,
