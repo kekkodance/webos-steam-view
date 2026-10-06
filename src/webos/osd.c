@@ -125,6 +125,17 @@ void osd_present(void) {
     free(last_au);
     last_au = au;
     last_au_len = total;
+    /* Fresh plane (launch, Back-out): the first IDR can take seconds to
+     * lock while the last stream frame sits displayed. Burst the new AU
+     * so the menu wins immediately instead of garbage. */
+    static unsigned long last_plane_burst = 0;
+    extern unsigned long media_plane_generation(void);
+    unsigned long gen = media_plane_generation();
+    if (gen != last_plane_burst) {
+        last_plane_burst = gen;
+        media_video_feed(au, total);
+        media_video_feed(au, total);
+    }
     return;
 }
 

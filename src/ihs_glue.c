@@ -89,12 +89,10 @@ static int on_video_start(IHS_Session *session, const IHS_StreamVideoConfig *con
 static IHS_StreamVideoSubmitResult on_video_submit(IHS_Session *session, IHS_Buffer *data,
                                                    IHS_StreamVideoFrameFlag flags, void *context) {
     App *app = context;
-    const uint8_t *payload = IHS_BufferPointer(data);
-    size_t len = data->size;
-    if (!media_video_feed(payload, len)) {
-        /* Decode hiccup: report lost so ihslib drops state and waits for a
-         * keyframe (SubmitFrame handles the reset). Error would kill the
-         * whole session, which is wrong for a transient decoder failure. */
+    /* Drop frames outside streaming: during teardown a dying worker can
+     * deliver stream AUs after the menu plane reopened (1080p bytes into
+     * a 720p decoder = garbage flash). */
+    if (app->state != APP_STATE_STREAMING) {
         return IHS_StreamVideoSubmitReportLost;
     }
     app->frames++;

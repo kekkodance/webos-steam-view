@@ -111,6 +111,12 @@ static void fit_video(int width, int height) {
     }
 }
 
+static unsigned long plane_generation = 0;
+
+unsigned long media_plane_generation(void) {
+    return plane_generation;
+}
+
 bool media_video_open(int width, int height) {
     if (!media_init()) return false;
     if (state.video_open && state.width == width && state.height == height) return true;
@@ -128,7 +134,10 @@ bool media_video_open(int width, int height) {
     state.video_open = (rc == 0);
     state.width = width;
     state.height = height;
-    if (rc == 0) fit_video(width, height);
+    if (rc == 0) {
+        plane_generation++;
+        fit_video(width, height);
+    }
     return state.video_open;
 }
 
