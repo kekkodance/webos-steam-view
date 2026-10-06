@@ -16,7 +16,7 @@
 #include <lgnc_directaudio.h>
 #include <lgnc_directvideo.h>
 #include <opus/opus.h>
-#include <sys/mman.h>
+#include <opus/opus_multistream.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -36,11 +36,13 @@ static struct {
     bool video_open;
     bool audio_open;
     int width, height;
-    /* opus decoder */
-    OpusDecoder *opus;
+    /* opus multistream decoder (same as ihsplay: Steam sends coupled
+     * stereo/surround; plain opus_decode misdecodes it as noise) */
+    OpusMSDecoder *opus;
     int sample_rate, channels;
     /* PCM staging buffer for one decoded packet */
-    int16_t pcm[1152 * 2];
+    int16_t pcm[1152 * 8];
+    size_t pcm_unit;
 } state;
 
 /* Read the SoC machine name, used by the m3 kadp fix. */
@@ -170,11 +172,21 @@ bool media_audio_open_pcm(int sample_rate, int channels) {
         state.audio_open = false;
     }
     if (state.opus != NULL) {
-        opus_decoder_destroy(state.opus);
+        opus_multistream_decoder_destroy(state.opus);
         state.opus = NULL;
     }
     int err = 0;
-    state.opus = opus_decoder_create(sample_rate, channels, &err);
+    /* ihsplay layout: mono = 1 stream; stereo = 1 coupled pair;
+     * surround = N mono streams (mapping identity). */
+    unsigned char mapping[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+    int streams = channels, coupled = 0;
+    if (channels == 2) {
+        streams = 1;
+        coupled = 1;
+    }
+    state.opus = opus_multistream_decoder_create(sample_rate, channels,
+                                                 streams, coupled,
+                                                 mapping, &err);
     if (state.opus == NULL || err != OPUS_OK) {
         fprintf(stderr, "Opus decoder init failed: %d\n", err);
         return false;
@@ -187,13 +199,14 @@ bool media_audio_open_pcm(int sample_rate, int channels) {
             .bitPerSample = 16,
     };
     if (LGNC_DIRECTAUDIO_Open(&info) != 0) {
-        opus_decoder_destroy(state.opus);
+        opus_multistream_decoder_destroy(state.opus);
         state.opus = NULL;
         return false;
     }
     state.audio_open = true;
     state.sample_rate = sample_rate;
     state.channels = channels;
+    state.pcm_unit = (size_t) channels * sizeof(int16_t);
     return true;
 }
 
@@ -203,10 +216,17 @@ bool media_audio_decode(const uint8_t *data, size_t len) {
         /* raw PCM passthrough */
         return LGNC_DIRECTAUDIO_Play(data, (unsigned int) len) == 0;
     }
-    int samples = opus_decode(state.opus, data, (int) len,
-                              state.pcm, 1152, 0);
+    int samples = opus_multistream_decode(state.opus, data, (int) len,
+                                          state.pcm, 1152, 0);
     if (samples <= 0) return false;
-    size_t pcm_bytes = (size_t) samples * (size_t) state.channels * 2;
+    size_t pcm_bytes = (size_t) samples * state.pcm_unit;
+    /* Latency cap: drop instead of queueing (DirectAudio buffers deep;
+     * unbounded queueing = seconds of delay). 500ms ceiling. */
+    int buffered = 0;
+    if (LGNC_DIRECTAUDIO_CheckBuffer(&buffered) == 0 && buffered > 0) {
+        size_t bytes_per_sec = (size_t) state.sample_rate * state.pcm_unit;
+        if ((size_t) buffered > bytes_per_sec / 2) return true;
+    }
     return LGNC_DIRECTAUDIO_Play(state.pcm, (unsigned int) pcm_bytes) == 0;
 }
 
@@ -216,7 +236,7 @@ void media_audio_close(void) {
     }
     state.audio_open = false;
     if (state.opus != NULL) {
-        opus_decoder_destroy(state.opus);
+        opus_multistream_decoder_destroy(state.opus);
         state.opus = NULL;
     }
 }
