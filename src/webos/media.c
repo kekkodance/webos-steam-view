@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 /* Weak dlsym: the NDK sysroot's static libdl.a is broken (undefined
  * __dlsym), so we link no libdl at all. If the loader provides dlsym the
@@ -40,9 +41,16 @@ static struct {
      * stereo/surround; plain opus_decode misdecodes it as noise) */
     OpusMSDecoder *opus;
     int sample_rate, channels;
-    /* PCM staging buffer for one decoded packet */
-    int16_t pcm[1152 * 8];
+    /* PCM ring: DirectAudio may consume async (after Play returns), so
+     * a single reused staging buffer aliases queued packets into
+     * garbage. 8 slots round-robin; pacing drops stale instead of
+     * queueing seconds of delay. */
+    int16_t pcm_ring[8][1152 * 8];
+    unsigned pcm_slot;
     size_t pcm_unit;
+    /* wall-clock pacing: audio must not run ahead of real time */
+    uint64_t audio_start_ms;
+    uint64_t audio_fed_samples;
 } state;
 
 /* Read the SoC machine name, used by the m3 kadp fix. */
@@ -207,7 +215,16 @@ bool media_audio_open_pcm(int sample_rate, int channels) {
     state.sample_rate = sample_rate;
     state.channels = channels;
     state.pcm_unit = (size_t) channels * sizeof(int16_t);
+    state.pcm_slot = 0;
+    state.audio_start_ms = 0;
+    state.audio_fed_samples = 0;
     return true;
+}
+
+static uint64_t audio_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t) ts.tv_sec * 1000 + (uint64_t) ts.tv_nsec / 1000000;
 }
 
 bool media_audio_decode(const uint8_t *data, size_t len) {
@@ -216,18 +233,32 @@ bool media_audio_decode(const uint8_t *data, size_t len) {
         /* raw PCM passthrough */
         return LGNC_DIRECTAUDIO_Play(data, (unsigned int) len) == 0;
     }
+    int16_t *pcm = state.pcm_ring[state.pcm_slot];
+    state.pcm_slot = (state.pcm_slot + 1) % 8;
     int samples = opus_multistream_decode(state.opus, data, (int) len,
-                                          state.pcm, 1152, 0);
+                                          pcm, 1152, 0);
     if (samples <= 0) return false;
-    size_t pcm_bytes = (size_t) samples * state.pcm_unit;
-    /* Latency cap: drop instead of queueing (DirectAudio buffers deep;
-     * unbounded queueing = seconds of delay). 500ms ceiling. */
-    int buffered = 0;
-    if (LGNC_DIRECTAUDIO_CheckBuffer(&buffered) == 0 && buffered > 0) {
-        size_t bytes_per_sec = (size_t) state.sample_rate * state.pcm_unit;
-        if ((size_t) buffered > bytes_per_sec / 2) return true;
+    /* Wall-clock pacing: never run more than 500ms ahead of real time.
+     * Without this the driver queue grows unboundedly (seconds of lag);
+     * with it, stale packets drop and live audio stays live. */
+    uint64_t now = audio_now_ms();
+    if (state.audio_fed_samples == 0) {
+        state.audio_start_ms = now;
     }
-    return LGNC_DIRECTAUDIO_Play(state.pcm, (unsigned int) pcm_bytes) == 0;
+    state.audio_fed_samples += (uint64_t) samples;
+    uint64_t fed_ms = state.audio_fed_samples * 1000 / (uint64_t) state.sample_rate;
+    uint64_t elapsed_ms = now - state.audio_start_ms;
+    if (fed_ms > elapsed_ms + 500) {
+        state.audio_fed_samples -= (uint64_t) samples;
+        return true;
+    }
+    /* Resync: if we fall more than 2s behind (seek, stall), restart clock. */
+    if (elapsed_ms > fed_ms + 2000) {
+        state.audio_start_ms = now;
+        state.audio_fed_samples = (uint64_t) samples;
+    }
+    size_t pcm_bytes = (size_t) samples * state.pcm_unit;
+    return LGNC_DIRECTAUDIO_Play(pcm, (unsigned int) pcm_bytes) == 0;
 }
 
 void media_audio_close(void) {
