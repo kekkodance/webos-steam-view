@@ -212,7 +212,9 @@ void app_request_stream(App *app) {
     app_set_status(app, "Requesting stream from %s...", info.hostname);
     IHS_StreamingRequest req = {
             .maxResolution = {1920, 1080},
-            .streamingEnable = {true, true, true},
+            /* video + input, no audio (DirectAudio path disabled):
+             * requesting audio we then reject breaks session setup. */
+            .streamingEnable = {true, false, true},
             .audioChannelCount = 2,
     };
     IHS_ClientStreamingRequest(app->client, &info, &req);
