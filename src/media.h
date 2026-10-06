@@ -16,6 +16,7 @@ bool media_init(void);
 /* H.264 video path */
 bool media_video_open(int width, int height);
 bool media_video_feed(const uint8_t *au, size_t len);
+void media_video_close(void);
 /* Increments on every successful plane open; OSD uses it to burst. */
 unsigned long media_plane_generation(void);
 
