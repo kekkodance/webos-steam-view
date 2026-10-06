@@ -17,11 +17,11 @@
 #include <lgnc_directvideo.h>
 #include <opus/opus.h>
 #include <opus/opus_multistream.h>
+#include <sys/mman.h>
 
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-
 /* Weak dlsym: the NDK sysroot's static libdl.a is broken (undefined
  * __dlsym), so we link no libdl at all. If the loader provides dlsym the
  * m3 fix uses it; otherwise the pointer is NULL and the fix is skipped. */
