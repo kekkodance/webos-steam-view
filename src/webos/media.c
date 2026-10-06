@@ -275,8 +275,19 @@ bool media_audio_decode(const uint8_t *data, size_t len) {
         state.audio_start_ms = now;
         state.audio_fed_samples = (uint64_t) samples;
     }
-    size_t pcm_bytes = (size_t) samples * state.pcm_unit;
-    return LGNC_DIRECTAUDIO_Play(pcm, (unsigned int) pcm_bytes) == 0;
+    /* Feed in ≤240-sample chunks (ihsplay's frame size): large single
+     * Plays glitch on this driver (explosions on loud packets). */
+    const uint8_t *pp = (const uint8_t *) pcm;
+    int remaining = samples;
+    while (remaining > 0) {
+        int n = remaining > 240 ? 240 : remaining;
+        if (LGNC_DIRECTAUDIO_Play(pp, (unsigned int) ((size_t) n * state.pcm_unit)) != 0) {
+            return false;
+        }
+        pp += (size_t) n * state.pcm_unit;
+        remaining -= n;
+    }
+    return true;
 }
 
 void media_audio_close(void) {
