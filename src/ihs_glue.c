@@ -5,6 +5,9 @@
  */
 #include "app.h"
 #include "media.h"
+#ifdef TARGET_WEBOS
+#include "webos/osd.h"
+#endif
 
 #include <ihslib.h>
 
@@ -125,14 +128,20 @@ static int on_video_capture_size(IHS_Session *session, int width, int height, vo
 static int on_audio_start(IHS_Session *session, const IHS_StreamAudioConfig *config, void *context) {
     (void) session;
     (void) context;
+#ifdef TARGET_WEBOS
     osd_trace("audio start codec=%d freq=%u ch=%u", (int) config->codec,
               (unsigned) config->frequency, (unsigned) config->channels);
+#endif
     if (config->codec != IHS_StreamAudioCodecOpus && config->codec != IHS_StreamAudioCodecRaw) {
+#ifdef TARGET_WEBOS
         osd_trace("audio REJECTED codec %d", (int) config->codec);
+#endif
         return -1;
     }
     if (!media_audio_open_pcm((int) config->frequency, (int) config->channels)) {
+#ifdef TARGET_WEBOS
         osd_trace("audio open FAILED");
+#endif
         return -1;
     }
     return 0;
@@ -140,9 +149,11 @@ static int on_audio_start(IHS_Session *session, const IHS_StreamAudioConfig *con
 static int on_audio_submit(IHS_Session *session, IHS_Buffer *data, void *context) {
     App *app = context;
     app->audio_frames++;
+#ifdef TARGET_WEBOS
     if ((app->audio_frames % 500) == 1) {
         osd_trace("audio frames=%lu size=%u", app->audio_frames, (unsigned) data->size);
     }
+#endif
     /* raw packets are fed through in media_audio_decode; Opus decoded there */
     media_audio_decode(IHS_BufferPointer(data), data->size);
     return 0;
