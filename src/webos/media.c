@@ -32,6 +32,13 @@ __attribute__((weak)) void *dlsym(void *handle, const char *symbol);
 #define APPID "com.kekko.steamview"
 #endif
 
+/* Serializes plane open/feed/close between the main loop (menu
+ * repeat-feed) and the session worker (stream open + submits). Without
+ * this the first stream open can race a menu feed and corrupt the plane
+ * (black first stream, works on re-pick). */
+#include <pthread.h>
+static pthread_mutex_t video_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static struct {
     bool plugin_ready;
     bool video_open;
@@ -132,45 +139,56 @@ unsigned long media_plane_generation(void) {
 
 bool media_video_open(int width, int height) {
     if (!media_init()) return false;
-    if (state.video_open && state.width == width && state.height == height) return true;
-    if (state.video_open) {
-        LGNC_DIRECTVIDEO_Close();
-        state.video_open = false;
-        /* Close is async in the VDEC driver: reopening immediately races
-         * the teardown and decodes against half-dead state (top-half
-         * garbage on stream/menu switches). Let it settle. */
-        usleep(200000);
+    pthread_mutex_lock(&video_lock);
+    bool ok = false;
+    if (state.video_open && state.width == width && state.height == height) {
+        ok = true;
+    } else {
+        if (state.video_open) {
+            LGNC_DIRECTVIDEO_Close();
+            state.video_open = false;
+            /* Close is async in the VDEC driver: reopening immediately races
+             * the teardown and decodes against half-dead state (top-half
+             * garbage on stream/menu switches). Let it settle. */
+            usleep(200000);
+        }
+        LGNC_VDEC_DATA_INFO_T info = {
+                .width = width,
+                .height = height,
+                .vdecFmt = LGNC_VDEC_FMT_H264,
+                .trid_type = LGNC_VDEC_3D_TYPE_NONE,
+        };
+        int rc = LGNC_DIRECTVIDEO_Open(&info);
+        state.video_open = (rc == 0);
+        state.width = width;
+        state.height = height;
+        if (rc == 0) {
+            plane_generation++;
+            fit_video(width, height);
+            ok = true;
+        }
     }
-    LGNC_VDEC_DATA_INFO_T info = {
-            .width = width,
-            .height = height,
-            .vdecFmt = LGNC_VDEC_FMT_H264,
-            .trid_type = LGNC_VDEC_3D_TYPE_NONE,
-    };
-    int rc = LGNC_DIRECTVIDEO_Open(&info);
-    state.video_open = (rc == 0);
-    state.width = width;
-    state.height = height;
-    if (rc == 0) {
-        plane_generation++;
-        fit_video(width, height);
-    }
-    return state.video_open;
+    pthread_mutex_unlock(&video_lock);
+    return ok;
 }
 
 bool media_video_feed(const uint8_t *au, size_t len) {
     if (!state.video_open || !au) return false;
     extern void osd_trace(const char *fmt, ...);
+    pthread_mutex_lock(&video_lock);
     int rc = LGNC_DIRECTVIDEO_Play(au, (unsigned int) len);
+    pthread_mutex_unlock(&video_lock);
     if (rc != 0) osd_trace("Play FAILED rc=%d len=%u", rc, (unsigned) len);
     return rc == 0;
 }
 
 void media_video_close(void) {
+    pthread_mutex_lock(&video_lock);
     if (state.video_open) {
         LGNC_DIRECTVIDEO_Close();
     }
     state.video_open = false;
+    pthread_mutex_unlock(&video_lock);
 }
 
 bool media_audio_open_pcm(int sample_rate, int channels) {
